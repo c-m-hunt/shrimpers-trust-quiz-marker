@@ -1,4 +1,4 @@
-# st-quiz-marker
+# shrimpers-trust-quiz-marker
 
 A tool to process quiz answer sheets using AWS Textract.
 
@@ -110,4 +110,4 @@ Available levels: `error`, `warn`, `info` (default), `debug`
 ## Development
 
 This project was created using `bun init` in bun v1.3.1. [Bun](https://bun.com) is a fast all-in-one JavaScript runtime.
-# shrimpers-trust-quiz-marker
+
