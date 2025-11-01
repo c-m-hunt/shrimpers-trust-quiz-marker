@@ -1,0 +1,19 @@
+{
+  "name": "st-quiz-marker",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/yargs": "^17.0.34"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@aws-sdk/client-textract": "^3.922.0",
+    "openai": "^6.7.0",
+    "winston": "^3.18.3",
+    "yargs": "^18.0.0"
+  }
+}
