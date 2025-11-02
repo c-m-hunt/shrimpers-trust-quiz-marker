@@ -1,6 +1,6 @@
 # shrimpers-trust-quiz-marker
 
-A tool to process quiz answer sheets using AWS Textract.
+A tool to process quiz answer sheets using AWS Textract with AI-powered grading.
 
 ## Installation
 
@@ -8,9 +8,52 @@ A tool to process quiz answer sheets using AWS Textract.
 bun install
 ```
 
+## Quick Start
+
+### 1. Create a Configuration File
+
+Copy the example configuration:
+```bash
+cp config.example.yaml config.yaml
+```
+
+Edit `config.yaml` to match your setup:
+```yaml
+input:
+  folder: "./2025/answerSheets"
+  maxQuestions: 100
+
+textract:
+  useMock: true
+  saveMock: false
+
+grading:
+  enabled: true
+  answerKeyPath: "./2025/answer-key.json"
+  questionsPath: "./2025/questions.json"
+
+output:
+  - type: "file"
+    path: "./output/results.json"
+```
+
+### 2. Run with Configuration File
+
+```bash
+bun run index.ts --config config.yaml
+```
+
 ## Usage
 
-### Process all subdirectories in a folder
+### Using Configuration File (Recommended)
+
+```bash
+bun run index.ts --config config.yaml
+```
+
+### Using CLI Arguments (Legacy)
+
+Process all subdirectories in a folder:
 
 ```bash
 bun run index.ts --folder ./answerSheets
@@ -65,30 +108,98 @@ bun run test-grading.ts
 ```
 This will run a standalone test without needing any image files or Textract data.
 
-### Additional options
+### CLI Options
 
+- `--config, -c <path>` - Path to YAML configuration file (recommended)
+- `--folder <path>` - Path to folder containing subdirectories with quiz images (legacy)
+- `--output, -o <path>` - Output file path for results (legacy)
 - `--pages <file1> <file2> ...` - Explicitly specify the order of page files
 - `--maxQ <number>` - Maximum question number to parse (default: 100)
 - `--grade` - Enable AI grading (requires `--answer-key`)
 - `--answer-key <path>` - Path to JSON file with correct answers
 - `--questions <path>` - Path to JSON file with question texts (optional)
+- `--use-mock` - Use saved mock data instead of calling Textract API
+- `--save-mock` - Save Textract API responses for later use
+
+## Configuration File Format
+
+The configuration file uses YAML format. See `config.example.yaml` for a complete example.
+
+### Input Configuration
+```yaml
+input:
+  folder: "./2025/answerSheets"  # Required
+  pages: ["page-1.jpg", "page-2.jpg"]  # Optional: explicit page order
+  maxQuestions: 100  # Optional: default 100
+```
+
+### Textract Configuration
+```yaml
+textract:
+  useMock: true   # Use saved mock data
+  saveMock: false # Save API responses
+```
+
+### Grading Configuration
+```yaml
+grading:
+  enabled: true
+  answerKeyPath: "./answer-key.json"  # Required
+  questionsPath: "./questions.json"   # Optional
+  model: "gpt-4o-mini"  # Optional: default "gpt-4o-mini"
+  temperature: 0.3      # Optional: default 0.3
+```
+
+### Output Configuration
+
+Multiple outputs can be configured:
+
+```yaml
+output:
+  # File output (JSON)
+  - type: "file"
+    path: "./output/results.json"
+  
+  # Google Sheets (coming soon)
+  # - type: "googleSheets"
+  #   spreadsheetId: "your-spreadsheet-id"
+  #   sheetName: "Quiz Results"
+  
+  # Excel (coming soon)
+  # - type: "excel"
+  #   path: "./output/results.xlsx"
+```
+
+Currently supported output types:
+- ✅ **file** - JSON file output
+- 🚧 **googleSheets** - Google Sheets integration (coming soon)
+- 🚧 **excel** - Excel file output (coming soon)
 
 ## Directory Structure
 
 ```
-answerSheets/
-  1/
-    page-1.jpg
-    page-2.jpg
-    .textract/          # Created with --save-mock
-      page-1.json
-      page-2.json
-  2/
-    page-1.jpg
-    page-2.jpg
-    .textract/
-      page-1.json
-      page-2.json
+project/
+├── config.yaml              # Configuration file
+├── answerSheets/
+│   ├── 1/
+│   │   ├── page-1.jpg
+│   │   ├── page-2.jpg
+│   │   └── .textract/      # Mock data (if enabled)
+│   │       ├── page-1.json
+│   │       └── page-2.json
+│   └── 2/
+│       ├── page-1.jpg
+│       ├── page-2.jpg
+│       └── .textract/
+│           ├── page-1.json
+│           └── page-2.json
+├── answer-key.json
+├── questions.json (optional)
+├── output/                  # Results output directory
+│   └── results.json
+└── logs/                    # Application logs
+    ├── combined.log
+    └── error.log
 ```
 
 ## Logging
@@ -106,6 +217,55 @@ LOG_LEVEL=debug bun run index.ts --folder ./2025/answerSheets --use-mock
 ```
 
 Available levels: `error`, `warn`, `info` (default), `debug`
+
+## Migration Guide: CLI Args → Config File
+
+If you're currently using CLI arguments, you can easily migrate to the configuration file approach:
+
+**Before (CLI args):**
+```bash
+bun run index.ts \
+  --folder ./answerSheets \
+  --use-mock \
+  --grade \
+  --answer-key ./answer-key.json \
+  --questions ./questions.json \
+  --output ./results.json
+```
+
+**After (Config file):**
+
+1. Create `config.yaml`:
+```yaml
+input:
+  folder: "./answerSheets"
+
+textract:
+  useMock: true
+
+grading:
+  enabled: true
+  answerKeyPath: "./answer-key.json"
+  questionsPath: "./questions.json"
+
+output:
+  - type: "file"
+    path: "./output/results.json"
+```
+
+2. Run with config:
+```bash
+bun run index.ts --config config.yaml
+```
+
+**Benefits:**
+- ✅ Single source of truth for all configuration
+- ✅ Version control friendly
+- ✅ Multiple outputs supported
+- ✅ Better for CI/CD pipelines
+- ✅ Easier to share configurations
+
+**Note:** CLI arguments are still supported for backward compatibility!
 
 ## Development
 

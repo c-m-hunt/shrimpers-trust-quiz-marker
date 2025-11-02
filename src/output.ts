@@ -1,0 +1,152 @@
+import { writeFile } from "fs/promises";
+import path from "path";
+import type { QuizResult } from "./quizExtractor.js";
+import type { OutputConfig } from "./config.js";
+import { createContextLogger } from "./logger.js";
+
+const logger = createContextLogger("output");
+
+export type ProcessedResults = Record<string, QuizResult>;
+
+/**
+ * Base interface for output handlers
+ */
+export interface OutputHandler {
+  write(results: ProcessedResults): Promise<void>;
+}
+
+/**
+ * File output handler - writes results to a JSON file
+ */
+export class FileOutputHandler implements OutputHandler {
+  constructor(private filePath: string) {}
+
+  async write(results: ProcessedResults): Promise<void> {
+    logger.info(`Writing results to file: ${this.filePath}`);
+    
+    try {
+      const dir = path.dirname(this.filePath);
+      // Ensure directory exists
+      await import("fs/promises").then((fs) => 
+        fs.mkdir(dir, { recursive: true })
+      );
+      
+      const jsonContent = JSON.stringify(results, null, 2);
+      await writeFile(this.filePath, jsonContent, "utf-8");
+      
+      logger.info(`Successfully wrote results to ${this.filePath}`, {
+        studentCount: Object.keys(results).length,
+        fileSize: jsonContent.length,
+      });
+    } catch (error) {
+      logger.error(`Failed to write file output`, { error, filePath: this.filePath });
+      throw error;
+    }
+  }
+}
+
+/**
+ * Google Sheets output handler (placeholder for future implementation)
+ */
+export class GoogleSheetsOutputHandler implements OutputHandler {
+  constructor(
+    private spreadsheetId: string,
+    private sheetName: string
+  ) {}
+
+  async write(results: ProcessedResults): Promise<void> {
+    logger.info(`Writing results to Google Sheets`, {
+      spreadsheetId: this.spreadsheetId,
+      sheetName: this.sheetName,
+    });
+    
+    // TODO: Implement Google Sheets API integration
+    logger.warn("Google Sheets output not yet implemented");
+    throw new Error("Google Sheets output is not yet implemented");
+  }
+}
+
+/**
+ * Excel output handler (placeholder for future implementation)
+ */
+export class ExcelOutputHandler implements OutputHandler {
+  constructor(private filePath: string) {}
+
+  async write(results: ProcessedResults): Promise<void> {
+    logger.info(`Writing results to Excel: ${this.filePath}`);
+    
+    // TODO: Implement Excel file generation
+    logger.warn("Excel output not yet implemented");
+    throw new Error("Excel output is not yet implemented");
+  }
+}
+
+/**
+ * Factory function to create output handlers from configuration
+ */
+export function createOutputHandler(config: OutputConfig): OutputHandler {
+  logger.debug(`Creating output handler`, { type: config.type });
+  
+  switch (config.type) {
+    case "file":
+      if (!config.path) {
+        throw new Error("File output requires 'path' configuration");
+      }
+      return new FileOutputHandler(config.path);
+    
+    case "googleSheets":
+      if (!config.spreadsheetId || !config.sheetName) {
+        throw new Error("Google Sheets output requires 'spreadsheetId' and 'sheetName'");
+      }
+      return new GoogleSheetsOutputHandler(config.spreadsheetId, config.sheetName);
+    
+    case "excel":
+      if (!config.path) {
+        throw new Error("Excel output requires 'path' configuration");
+      }
+      return new ExcelOutputHandler(config.path);
+    
+    default:
+      throw new Error(`Unknown output type: ${(config as any).type}`);
+  }
+}
+
+/**
+ * Write results to all configured outputs
+ */
+export async function writeResults(
+  results: ProcessedResults,
+  outputConfigs: OutputConfig[]
+): Promise<void> {
+  logger.info(`Writing results to ${outputConfigs.length} output(s)`);
+  
+  const handlers = outputConfigs.map(createOutputHandler);
+  const errors: Error[] = [];
+  
+  for (let i = 0; i < handlers.length; i++) {
+    const handler = handlers[i];
+    const config = outputConfigs[i];
+    
+    if (!handler || !config) continue;
+    
+    try {
+      await handler.write(results);
+      logger.info(`Output ${i + 1}/${handlers.length} completed successfully`, {
+        type: config.type,
+      });
+    } catch (error) {
+      logger.error(`Output ${i + 1}/${handlers.length} failed`, {
+        type: config.type,
+        error,
+      });
+      errors.push(error as Error);
+    }
+  }
+  
+  if (errors.length > 0) {
+    logger.error(`${errors.length} output(s) failed`, { totalOutputs: handlers.length });
+    throw new Error(`${errors.length} output(s) failed: ${errors.map(e => e.message).join(", ")}`);
+  }
+  
+  logger.info("All outputs completed successfully");
+}

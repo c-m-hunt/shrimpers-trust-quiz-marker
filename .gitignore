@@ -43,3 +43,11 @@ questions.json
 # Log files
 logs/
 *.log
+
+# Output files
+output/
+
+# Config files (keep config.example.yaml)
+config.yaml
+
+2025

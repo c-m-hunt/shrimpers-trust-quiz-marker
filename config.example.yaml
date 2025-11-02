@@ -1,0 +1,35 @@
+# Quiz Marker Configuration File
+
+# Input configuration
+input:
+  folder: "./2025/answerSheets"  # Path to folder containing subdirectories with quiz images
+  # pages:  # Optional: Explicitly specify page order
+  #   - page-1.jpg
+  #   - page-2.jpg
+  maxQuestions: 100  # Maximum question number to parse (Q1..Qn)
+
+# Textract configuration
+textract:
+  useMock: true   # Use saved mock data instead of calling Textract API
+  saveMock: false # Save Textract API responses to .textract folders
+
+# Grading configuration (optional)
+grading:
+  enabled: true
+  answerKeyPath: "./2025/answer-key.json"
+  questionsPath: "./2025/questions.json"  # Optional: for better grading context
+  model: "gpt-4o-mini"  # OpenAI model to use
+  temperature: 0.3      # Temperature for AI responses
+
+# Output configuration
+output:
+  - type: "file"
+    path: "./output/results.json"
+  
+  # Future outputs (not yet implemented):
+  # - type: "googleSheets"
+  #   spreadsheetId: "your-spreadsheet-id"
+  #   sheetName: "Quiz Results"
+  
+  # - type: "excel"
+  #   path: "./output/results.xlsx"
