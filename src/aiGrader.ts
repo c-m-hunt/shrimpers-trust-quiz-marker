@@ -27,7 +27,7 @@ export function initializeOpenAI(apiKey?: string) {
   if (!key) {
     logger.error("OpenAI API key not found");
     throw new Error(
-      "OpenAI API key not found. Set OPENAI_API_KEY environment variable or pass it to initializeOpenAI()"
+      "OpenAI API key not found. Set OPENAI_API_KEY environment variable or pass it to initializeOpenAI()",
     );
   }
   openaiClient = new OpenAI({ apiKey: key });
@@ -48,7 +48,7 @@ export async function gradeAnswers(
   options: {
     model?: string;
     temperature?: number;
-  } = {}
+  } = {},
 ): Promise<GradingResult> {
   const client = getClient();
   const model = options.model || "gpt-4o-mini";
@@ -136,8 +136,7 @@ Return ONLY the JSON array, no other text.`;
     messages: [
       {
         role: "system",
-        content:
-          "You are a precise exam grading assistant. Return only valid JSON arrays.",
+        content: "You are a precise exam grading assistant. Return only valid JSON arrays.",
       },
       {
         role: "user",
@@ -186,7 +185,7 @@ Return ONLY the JSON array, no other text.`;
 
   const correctCount = grades.filter((g) => g.isCorrect).length;
   const possibleAlternatives = grades.filter(
-    (g) => !g.isCorrect && g.confidence === "low" && g.notes
+    (g) => !g.isCorrect && g.confidence === "low" && g.notes,
   ).length;
 
   logger.info(`Grading complete: ${correctCount}/${grades.length} correct`, {
@@ -211,7 +210,7 @@ export async function gradeAnswersWithRetry(
     model?: string;
     temperature?: number;
     maxRetries?: number;
-  } = {}
+  } = {},
 ): Promise<GradingResult> {
   const maxRetries = options.maxRetries || 3;
   let lastError: Error | null = null;
@@ -219,12 +218,7 @@ export async function gradeAnswersWithRetry(
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       logger.debug(`Grading attempt ${attempt}/${maxRetries}`);
-      return await gradeAnswers(
-        questions,
-        correctAnswers,
-        submittedAnswers,
-        options
-      );
+      return await gradeAnswers(questions, correctAnswers, submittedAnswers, options);
     } catch (err) {
       lastError = err as Error;
       logger.warn(`Grading attempt ${attempt} failed`, {
@@ -233,7 +227,7 @@ export async function gradeAnswersWithRetry(
         maxRetries,
       });
       if (attempt < maxRetries) {
-        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
+        const delay = Math.min(1000 * 2 ** (attempt - 1), 5000);
         logger.info(`Retrying in ${delay}ms...`);
         await new Promise((resolve) => setTimeout(resolve, delay));
       }

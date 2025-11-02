@@ -1,13 +1,13 @@
+import { readdir, readFile, stat } from "node:fs/promises";
+import path from "node:path";
 import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
+import { gradeAnswersWithRetry, initializeOpenAI } from "./src/aiGrader.js";
+import { type Config, loadConfig, validateConfig } from "./src/config.js";
+import { createContextLogger } from "./src/logger.js";
+import { sortResultsAnswers, writeResults } from "./src/output.js";
 import { processQuizFolder } from "./src/quizExtractor.js";
 import { setMockMode, setSaveMockData } from "./src/textract.js";
-import { initializeOpenAI, gradeAnswersWithRetry } from "./src/aiGrader.js";
-import { loadConfig, validateConfig } from "./src/config.js";
-import { writeResults } from "./src/output.js";
-import { readdir, stat, readFile } from "fs/promises";
-import path from "path";
-import logger, { createContextLogger } from "./src/logger.js";
 
 const mainLogger = createContextLogger("main");
 
@@ -52,8 +52,7 @@ const argv = await yargs(hideBin(process.argv))
   })
   .option("questions", {
     type: "string",
-    describe:
-      "Path to JSON file with question texts (optional, for better grading)",
+    describe: "Path to JSON file with question texts (optional, for better grading)",
   })
   .option("output", {
     type: "string",
@@ -64,7 +63,7 @@ const argv = await yargs(hideBin(process.argv))
   .parse();
 
 async function main() {
-  let config;
+  let config: Config;
   let pages: string[] | undefined;
   let answerKey: Record<string, string> | null = null;
   let questions: Record<string, string> | null = null;
@@ -104,9 +103,7 @@ async function main() {
             questionsPath: argv.questions,
           }
         : undefined,
-      output: argv.output
-        ? [{ type: "file" as const, path: argv.output }]
-        : [],
+      output: argv.output ? [{ type: "file" as const, path: argv.output }] : [],
     };
 
     if (argv.grade && !argv["answer-key"]) {
@@ -137,10 +134,7 @@ async function main() {
   // Load answer key and questions if grading is enabled
   if (config.grading?.enabled) {
     try {
-      const answerKeyContent = await readFile(
-        config.grading.answerKeyPath,
-        "utf-8"
-      );
+      const answerKeyContent = await readFile(config.grading.answerKeyPath, "utf-8");
       answerKey = JSON.parse(answerKeyContent);
       mainLogger.info("Loaded answer key", {
         path: config.grading.answerKeyPath,
@@ -155,18 +149,13 @@ async function main() {
 
     if (config.grading.questionsPath) {
       try {
-        const questionsContent = await readFile(
-          config.grading.questionsPath,
-          "utf-8"
-        );
+        const questionsContent = await readFile(config.grading.questionsPath, "utf-8");
         questions = JSON.parse(questionsContent);
         mainLogger.info("Loaded questions file", {
           path: config.grading.questionsPath,
           questionCount: questions ? Object.keys(questions).length : 0,
         });
-        console.log(
-          `📋 Loaded questions from: ${config.grading.questionsPath}`
-        );
+        console.log(`📋 Loaded questions from: ${config.grading.questionsPath}`);
       } catch (err) {
         mainLogger.warn("Failed to load questions file", { error: err });
         console.warn(`⚠️  Failed to load questions file:`, err);
@@ -215,9 +204,7 @@ async function main() {
       count: subdirectories.length,
       subdirs: subdirectories.map((d) => path.basename(d)),
     });
-    console.log(
-      `Found ${subdirectories.length} subdirectories to process\n`
-    );
+    console.log(`Found ${subdirectories.length} subdirectories to process\n`);
 
     const results: Record<string, any> = {};
 
@@ -233,14 +220,11 @@ async function main() {
         const result = await processQuizFolder(
           subdir,
           config.input.pages,
-          config.input.maxQuestions || 100
+          config.input.maxQuestions || 100,
         );
 
         // Basic email sanity check
-        if (
-          result.email &&
-          !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(result.email)
-        ) {
+        if (result.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(result.email)) {
           mainLogger.warn(`Suspicious email format for ${subdirName}`, {
             email: result.email,
           });
@@ -259,34 +243,29 @@ async function main() {
               {
                 model: config.grading.model || "gpt-4o-mini",
                 temperature: config.grading.temperature || 0.3,
-              }
+              },
             );
 
             result.grading = grading;
 
             const score = `${grading.correctAnswers}/${grading.totalQuestions}`;
-            const percentage = (
-              (grading.correctAnswers / grading.totalQuestions) *
-              100
-            ).toFixed(1);
+            const percentage = ((grading.correctAnswers / grading.totalQuestions) * 100).toFixed(1);
 
             console.log(
-              `  📊 Score: ${score} (${percentage}%) | Possible alternatives: ${grading.possibleAlternatives}`
+              `  📊 Score: ${score} (${percentage}%) | Possible alternatives: ${grading.possibleAlternatives}`,
             );
 
             // Highlight potential alternatives
             if (grading.possibleAlternatives > 0) {
               mainLogger.info(
-                `Found ${grading.possibleAlternatives} possible alternative answers for ${subdirName}`
+                `Found ${grading.possibleAlternatives} possible alternative answers for ${subdirName}`,
               );
-              console.log(
-                `  💡 Review these questions for alternative answers:`
-              );
+              console.log(`  💡 Review these questions for alternative answers:`);
               grading.grades
                 .filter((g) => !g.isCorrect && g.confidence === "low")
                 .forEach((g) => {
                   console.log(
-                    `     - ${g.question}: "${g.submittedAnswer}" (Expected: "${g.correctAnswer}")`
+                    `     - ${g.question}: "${g.submittedAnswer}" (Expected: "${g.correctAnswer}")`,
                   );
                   if (g.notes) console.log(`       Note: ${g.notes}`);
                 });
@@ -329,11 +308,12 @@ async function main() {
       console.log("✅ All outputs completed successfully\n");
     }
 
-    // Always show console output
-    console.log("\n" + "=".repeat(50));
+    // Always show console output (sorted numerically)
+    console.log(`\n${"=".repeat(50)}`);
     console.log("ALL RESULTS:");
     console.log("=".repeat(50));
-    console.log(JSON.stringify(results, null, 2));
+    const sortedResults = sortResultsAnswers(results);
+    console.log(JSON.stringify(sortedResults, null, 2));
   } catch (err) {
     mainLogger.error("Fatal error during quiz processing", { error: err });
     console.error("Failed to process quizzes:", err);

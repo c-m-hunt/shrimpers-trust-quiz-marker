@@ -271,3 +271,36 @@ bun run index.ts --config config.yaml
 
 This project was created using `bun init` in bun v1.3.1. [Bun](https://bun.com) is a fast all-in-one JavaScript runtime.
 
+### Code Quality
+
+The project uses [Biome](https://biomejs.dev/) for linting and formatting.
+
+**Available Commands:**
+
+```bash
+# Linting
+bun run lint          # Check for lint errors
+bun run lint:fix      # Fix auto-fixable lint errors
+
+# Formatting
+bun run format        # Check code formatting
+bun run format:fix    # Auto-format code
+
+# Comprehensive Check
+bun run check         # Run both linting and formatting checks
+bun run check:fix     # Auto-fix both linting and formatting issues
+
+# Testing
+bun run test          # Run tests
+```
+
+**Configuration:**
+
+Biome configuration is in `biome.json`. The setup includes:
+- ✅ 2-space indentation
+- ✅ Double quotes for strings
+- ✅ Semicolons required
+- ✅ Import organization
+- ✅ Node.js protocol imports (e.g., `node:fs/promises`)
+- ✅ Git integration (respects .gitignore)
+

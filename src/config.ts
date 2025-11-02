@@ -1,4 +1,4 @@
-import { readFile } from "fs/promises";
+import { readFile } from "node:fs/promises";
 import yaml from "js-yaml";
 import { createContextLogger } from "./logger.js";
 
@@ -96,7 +96,9 @@ export function validateConfig(config: Config): void {
       throw new Error("output.path is required for file output type");
     }
     if (output.type === "googleSheets" && (!output.spreadsheetId || !output.sheetName)) {
-      throw new Error("output.spreadsheetId and output.sheetName are required for googleSheets output type");
+      throw new Error(
+        "output.spreadsheetId and output.sheetName are required for googleSheets output type",
+      );
     }
     if (output.type === "excel" && !output.path) {
       throw new Error("output.path is required for excel output type");

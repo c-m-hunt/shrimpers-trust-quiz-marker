@@ -1,12 +1,8 @@
-import {
-  AnalyzeDocumentCommand,
-  type Block,
-  type Relationship,
-} from "@aws-sdk/client-textract";
+import { existsSync } from "node:fs";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { AnalyzeDocumentCommand, type Block, type Relationship } from "@aws-sdk/client-textract";
 import { textract } from "./aws.js";
-import { readFile, writeFile, mkdir } from "fs/promises";
-import path from "path";
-import { existsSync } from "fs";
 import { createContextLogger } from "./logger.js";
 
 const logger = createContextLogger("textract");
@@ -33,9 +29,7 @@ function getMockPath(imagePath: string): string {
   return path.join(mockDir, `${filename}.json`);
 }
 
-export async function analyzeImageForForms(
-  imagePath: string
-): Promise<Block[]> {
+export async function analyzeImageForForms(imagePath: string): Promise<Block[]> {
   const mockPath = getMockPath(imagePath);
   const fileName = path.basename(imagePath);
 
@@ -93,17 +87,12 @@ export function extractKeyValues(blocks: Block[]): KVMap {
     blockMap.set(b.Id, b);
     if (b.BlockType === "KEY_VALUE_SET" && b.EntityTypes?.includes("KEY")) {
       keyBlocks.push(b);
-    } else if (
-      b.BlockType === "KEY_VALUE_SET" &&
-      b.EntityTypes?.includes("VALUE")
-    ) {
+    } else if (b.BlockType === "KEY_VALUE_SET" && b.EntityTypes?.includes("VALUE")) {
       valueBlocks.push(b);
     }
   }
 
-  logger.debug(
-    `Found ${keyBlocks.length} key blocks and ${valueBlocks.length} value blocks`
-  );
+  logger.debug(`Found ${keyBlocks.length} key blocks and ${valueBlocks.length} value blocks`);
 
   const getText = (block?: Block | null): string => {
     if (!block?.Relationships) return "";
@@ -174,9 +163,7 @@ export function normaliseKV(kv: KVMap): KVMap {
  * If your form prints question labels near answer boxes, Textract usually captures them as keys.
  */
 export function extractAnswers(kv: KVMap, maxQ = 100): Record<string, string> {
-  logger.debug(
-    `Extracting answers from ${Object.keys(kv).length} KV pairs (maxQ: ${maxQ})`
-  );
+  logger.debug(`Extracting answers from ${Object.keys(kv).length} KV pairs (maxQ: ${maxQ})`);
   const answers: Record<string, string> = {};
   const qRegexes = Array.from({ length: maxQ }, (_, i) => {
     const q = i + 1;

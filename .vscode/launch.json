@@ -1,0 +1,39 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "bun",
+      "request": "launch",
+      "name": "Debug with Bun",
+      "program": "${workspaceFolder}/index.ts",
+      "args": ["--folder", "${workspaceFolder}/answerSheets", "--use-mock"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "restart": true,
+      "protocol": "inspector",
+      "sourceMaps": true,
+      "outFiles": ["${workspaceFolder}/**/*.ts"]
+    },
+    {
+      "type": "bun",
+      "request": "launch",
+      "name": "Debug with Bun (Custom Args)",
+      "program": "${workspaceFolder}/index.ts",
+      "args": ["--folder", "${input:folderPath}"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "restart": true,
+      "protocol": "inspector",
+      "sourceMaps": true,
+      "outFiles": ["${workspaceFolder}/**/*.ts"]
+    }
+  ],
+  "inputs": [
+    {
+      "id": "folderPath",
+      "type": "promptString",
+      "description": "Path to folder containing subdirectories with quiz images",
+      "default": "${workspaceFolder}/answerSheets"
+    }
+  ]
+}

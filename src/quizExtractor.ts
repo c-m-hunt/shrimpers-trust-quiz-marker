@@ -1,12 +1,7 @@
-import path from "path";
-import {
-  analyzeImageForForms,
-  extractAnswers,
-  extractKeyValues,
-  normaliseKV,
-} from "./textract.js";
+import path from "node:path";
 import type { GradingResult } from "./aiGrader.js";
 import { createContextLogger } from "./logger.js";
+import { analyzeImageForForms, extractAnswers, extractKeyValues, normaliseKV } from "./textract.js";
 
 const logger = createContextLogger("quizExtractor");
 
@@ -21,13 +16,13 @@ export type QuizResult = {
 export async function processQuizFolder(
   folderPath: string,
   pageFiles?: string[], // if you want to control order; else we'll guess
-  maxQuestions = 100
+  maxQuestions = 100,
 ): Promise<QuizResult> {
   logger.info(`Processing quiz folder: ${folderPath}`, { maxQuestions });
 
   const files = pageFiles
     ? pageFiles
-    : (await import("fs/promises").then((fs) => fs.readdir(folderPath)))
+    : (await import("node:fs/promises").then((fs) => fs.readdir(folderPath)))
         .filter((f) => /\.(jpg|jpeg|png|tiff|bmp)$/i.test(f))
         .sort();
 

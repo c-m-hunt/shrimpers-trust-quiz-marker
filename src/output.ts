@@ -1,12 +1,43 @@
-import { writeFile } from "fs/promises";
-import path from "path";
-import type { QuizResult } from "./quizExtractor.js";
+import { writeFile } from "node:fs/promises";
+import path from "node:path";
 import type { OutputConfig } from "./config.js";
 import { createContextLogger } from "./logger.js";
+import type { QuizResult } from "./quizExtractor.js";
 
 const logger = createContextLogger("output");
 
 export type ProcessedResults = Record<string, QuizResult>;
+
+/**
+ * Sort answer keys numerically (Q1, Q2, ... Q10, Q11, etc.)
+ */
+function sortAnswersNumerically(answers: Record<string, string>): Record<string, string> {
+  const sortedEntries = Object.entries(answers).sort((a, b) => {
+    // Extract numeric part from keys like "Q1", "Q10", "1.", "10.", etc.
+    const numA = parseInt(a[0].match(/\d+/)?.[0] || "0", 10);
+    const numB = parseInt(b[0].match(/\d+/)?.[0] || "0", 10);
+    return numA - numB;
+  });
+
+  return Object.fromEntries(sortedEntries);
+}
+
+/**
+ * Sort all answers in results numerically
+ */
+export function sortResultsAnswers(results: ProcessedResults): ProcessedResults {
+  const sorted: ProcessedResults = {};
+
+  for (const [key, result] of Object.entries(results)) {
+    sorted[key] = {
+      ...result,
+      answers: sortAnswersNumerically(result.answers),
+      raw: result.raw.map((page) => sortAnswersNumerically(page)),
+    };
+  }
+
+  return sorted;
+}
 
 /**
  * Base interface for output handlers
@@ -23,23 +54,26 @@ export class FileOutputHandler implements OutputHandler {
 
   async write(results: ProcessedResults): Promise<void> {
     logger.info(`Writing results to file: ${this.filePath}`);
-    
+
     try {
       const dir = path.dirname(this.filePath);
       // Ensure directory exists
-      await import("fs/promises").then((fs) => 
-        fs.mkdir(dir, { recursive: true })
-      );
-      
-      const jsonContent = JSON.stringify(results, null, 2);
+      await import("node:fs/promises").then((fs) => fs.mkdir(dir, { recursive: true }));
+
+      // Sort answers numerically before writing
+      const sortedResults = sortResultsAnswers(results);
+      const jsonContent = JSON.stringify(sortedResults, null, 2);
       await writeFile(this.filePath, jsonContent, "utf-8");
-      
+
       logger.info(`Successfully wrote results to ${this.filePath}`, {
         studentCount: Object.keys(results).length,
         fileSize: jsonContent.length,
       });
     } catch (error) {
-      logger.error(`Failed to write file output`, { error, filePath: this.filePath });
+      logger.error(`Failed to write file output`, {
+        error,
+        filePath: this.filePath,
+      });
       throw error;
     }
   }
@@ -51,15 +85,15 @@ export class FileOutputHandler implements OutputHandler {
 export class GoogleSheetsOutputHandler implements OutputHandler {
   constructor(
     private spreadsheetId: string,
-    private sheetName: string
+    private sheetName: string,
   ) {}
 
-  async write(results: ProcessedResults): Promise<void> {
+  async write(_results: ProcessedResults): Promise<void> {
     logger.info(`Writing results to Google Sheets`, {
       spreadsheetId: this.spreadsheetId,
       sheetName: this.sheetName,
     });
-    
+
     // TODO: Implement Google Sheets API integration
     logger.warn("Google Sheets output not yet implemented");
     throw new Error("Google Sheets output is not yet implemented");
@@ -72,9 +106,9 @@ export class GoogleSheetsOutputHandler implements OutputHandler {
 export class ExcelOutputHandler implements OutputHandler {
   constructor(private filePath: string) {}
 
-  async write(results: ProcessedResults): Promise<void> {
+  async write(_results: ProcessedResults): Promise<void> {
     logger.info(`Writing results to Excel: ${this.filePath}`);
-    
+
     // TODO: Implement Excel file generation
     logger.warn("Excel output not yet implemented");
     throw new Error("Excel output is not yet implemented");
@@ -86,26 +120,26 @@ export class ExcelOutputHandler implements OutputHandler {
  */
 export function createOutputHandler(config: OutputConfig): OutputHandler {
   logger.debug(`Creating output handler`, { type: config.type });
-  
+
   switch (config.type) {
     case "file":
       if (!config.path) {
         throw new Error("File output requires 'path' configuration");
       }
       return new FileOutputHandler(config.path);
-    
+
     case "googleSheets":
       if (!config.spreadsheetId || !config.sheetName) {
         throw new Error("Google Sheets output requires 'spreadsheetId' and 'sheetName'");
       }
       return new GoogleSheetsOutputHandler(config.spreadsheetId, config.sheetName);
-    
+
     case "excel":
       if (!config.path) {
         throw new Error("Excel output requires 'path' configuration");
       }
       return new ExcelOutputHandler(config.path);
-    
+
     default:
       throw new Error(`Unknown output type: ${(config as any).type}`);
   }
@@ -116,19 +150,19 @@ export function createOutputHandler(config: OutputConfig): OutputHandler {
  */
 export async function writeResults(
   results: ProcessedResults,
-  outputConfigs: OutputConfig[]
+  outputConfigs: OutputConfig[],
 ): Promise<void> {
   logger.info(`Writing results to ${outputConfigs.length} output(s)`);
-  
+
   const handlers = outputConfigs.map(createOutputHandler);
   const errors: Error[] = [];
-  
+
   for (let i = 0; i < handlers.length; i++) {
     const handler = handlers[i];
     const config = outputConfigs[i];
-    
+
     if (!handler || !config) continue;
-    
+
     try {
       await handler.write(results);
       logger.info(`Output ${i + 1}/${handlers.length} completed successfully`, {
@@ -142,11 +176,15 @@ export async function writeResults(
       errors.push(error as Error);
     }
   }
-  
+
   if (errors.length > 0) {
-    logger.error(`${errors.length} output(s) failed`, { totalOutputs: handlers.length });
-    throw new Error(`${errors.length} output(s) failed: ${errors.map(e => e.message).join(", ")}`);
+    logger.error(`${errors.length} output(s) failed`, {
+      totalOutputs: handlers.length,
+    });
+    throw new Error(
+      `${errors.length} output(s) failed: ${errors.map((e) => e.message).join(", ")}`,
+    );
   }
-  
+
   logger.info("All outputs completed successfully");
 }

@@ -1,5 +1,4 @@
 import winston from "winston";
-import path from "path";
 
 // Custom format for console output with colors
 const consoleFormat = winston.format.combine(
@@ -11,14 +10,14 @@ const consoleFormat = winston.format.combine(
       msg += ` ${JSON.stringify(metadata)}`;
     }
     return msg;
-  })
+  }),
 );
 
 // Format for file output (no colors)
 const fileFormat = winston.format.combine(
   winston.format.timestamp({ format: "YYYY-MM-DD HH:mm:ss" }),
   winston.format.errors({ stack: true }),
-  winston.format.json()
+  winston.format.json(),
 );
 
 // Create the logger
@@ -47,14 +46,10 @@ const logger = winston.createLogger({
 // Create a logger that can be used with additional context
 export function createContextLogger(context: string) {
   return {
-    debug: (message: string, meta?: any) =>
-      logger.debug(message, { context, ...meta }),
-    info: (message: string, meta?: any) =>
-      logger.info(message, { context, ...meta }),
-    warn: (message: string, meta?: any) =>
-      logger.warn(message, { context, ...meta }),
-    error: (message: string, meta?: any) =>
-      logger.error(message, { context, ...meta }),
+    debug: (message: string, meta?: any) => logger.debug(message, { context, ...meta }),
+    info: (message: string, meta?: any) => logger.info(message, { context, ...meta }),
+    warn: (message: string, meta?: any) => logger.warn(message, { context, ...meta }),
+    error: (message: string, meta?: any) => logger.error(message, { context, ...meta }),
   };
 }
 
