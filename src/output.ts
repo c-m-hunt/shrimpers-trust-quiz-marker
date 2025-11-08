@@ -32,7 +32,6 @@ export function sortResultsAnswers(results: ProcessedResults): ProcessedResults 
     sorted[key] = {
       ...result,
       answers: sortAnswersNumerically(result.answers),
-      raw: result.raw.map((page) => sortAnswersNumerically(page)),
     };
   }
 

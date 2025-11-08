@@ -1,7 +1,13 @@
 import path from "node:path";
 import type { GradingResult } from "./aiGrader.js";
 import { createContextLogger } from "./logger.js";
-import { analyzeImageForForms, extractAnswers, extractKeyValues, normaliseKV } from "./textract.js";
+import {
+  analyzeImageForForms,
+  extractAnswers,
+  extractKeyValues,
+  extractTableAnswers,
+  normaliseKV,
+} from "./textract.js";
 
 const logger = createContextLogger("quizExtractor");
 
@@ -9,7 +15,6 @@ export type QuizResult = {
   name?: string;
   email?: string;
   answers: Record<string, string>;
-  raw: Array<Record<string, string>>; // KV per page (for debugging)
   grading?: GradingResult; // AI grading results if enabled
 };
 
@@ -28,7 +33,6 @@ export async function processQuizFolder(
 
   logger.info(`Found ${files.length} image files to process`, { files });
 
-  const rawPages: Array<Record<string, string>> = [];
   const mergedAnswers: Record<string, string> = {};
   let name: string | undefined;
   let email: string | undefined;
@@ -37,20 +41,41 @@ export async function processQuizFolder(
     logger.debug(`Processing file: ${f}`);
     const full = path.join(folderPath, f);
     const blocks = await analyzeImageForForms(full);
-    const kv = normaliseKV(extractKeyValues(blocks));
-    rawPages.push(kv);
 
-    // pick up name/email wherever they appear (usually page 1)
-    if (!name && kv.name) {
-      name = kv.name;
-      logger.info(`Found student name: ${name}`);
-    }
-    if (!email && kv.email) {
-      email = kv.email;
-      logger.info(`Found student email: ${email}`);
+    // Try table extraction first (for 6-column format)
+    let answers = extractTableAnswers(blocks, maxQuestions);
+
+    // If no answers from table, fallback to key-value extraction
+    if (Object.keys(answers).length === 0) {
+      logger.debug(`No table answers found, falling back to KV extraction`);
+      const kv = normaliseKV(extractKeyValues(blocks));
+
+      // pick up name/email wherever they appear
+      if (!name && kv.name) {
+        name = kv.name;
+        logger.info(`Found student name: ${name}`);
+        delete kv.name; // Avoid it being processed as an answer
+      }
+      if (!email && kv.email) {
+        email = kv.email;
+        logger.info(`Found student email: ${email}`);
+        delete kv.email; // Avoid it being processed as an answer
+      }
+
+      answers = extractAnswers(kv, maxQuestions);
+    } else {
+      // For table extraction, still try to get name/email from KV pairs
+      const kv = normaliseKV(extractKeyValues(blocks));
+      if (!name && kv.name) {
+        name = kv.name;
+        logger.info(`Found student name: ${name}`);
+      }
+      if (!email && kv.email) {
+        email = kv.email;
+        logger.info(`Found student email: ${email}`);
+      }
     }
 
-    const answers = extractAnswers(kv, maxQuestions);
     Object.assign(mergedAnswers, answers);
     logger.debug(`Merged ${Object.keys(answers).length} answers from ${f}`);
   }
@@ -66,6 +91,5 @@ export async function processQuizFolder(
     name,
     email,
     answers: mergedAnswers,
-    raw: rawPages,
   };
 }

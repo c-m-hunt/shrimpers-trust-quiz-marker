@@ -27,7 +27,7 @@ export function initializeOpenAI(apiKey?: string) {
   if (!key) {
     logger.error("OpenAI API key not found");
     throw new Error(
-      "OpenAI API key not found. Set OPENAI_API_KEY environment variable or pass it to initializeOpenAI()",
+      "OpenAI API key not found. Set OPENAI_API_KEY environment variable or pass it to initializeOpenAI()"
     );
   }
   openaiClient = new OpenAI({ apiKey: key });
@@ -48,7 +48,7 @@ export async function gradeAnswers(
   options: {
     model?: string;
     temperature?: number;
-  } = {},
+  } = {}
 ): Promise<GradingResult> {
   const client = getClient();
   const model = options.model || "gpt-4o-mini";
@@ -68,21 +68,21 @@ export async function gradeAnswers(
     temperature,
   });
 
-  const prompt = `You are an expert exam grader. Your task is to grade student answers with fairness and understanding, especially considering OCR errors from scanned documents.
+  const prompt = `You are a compassionate and optimistic exam grader. Your PRIMARY GOAL is to recognize when students have demonstrated knowledge, even when OCR errors and handwriting make answers messy.
+
+FUNDAMENTAL PRINCIPLE: DEFAULT TO MARKING ANSWERS AS CORRECT. Only mark incorrect when the answer is CLEARLY WRONG with no reasonable interpretation that matches the expected answer.
 
 For each question, you will receive:
 1. The question text
 2. The expected correct answer
-3. The student's submitted answer (from OCR, may have spelling errors)
+3. The student's submitted answer (from OCR on handwriting - expect spelling errors, misplaced spaces, and character recognition issues)
 
-Your job is to:
-- Determine if the answer is correct, considering:
-  * Spelling variations and OCR errors
-  * Capitalization and spacing errors
-  * Synonyms and alternative phrasings
-  * Partial correctness
-- Identify potentially valid alternative answers that weren't in the answer key
-- Provide confidence level: "high" (clearly correct/incorrect), "medium" (correct but with minor OCR/formatting issues), "low" (alternative answer that may be valid)
+GRADING PHILOSOPHY:
+- Be GENEROUS with OCR and handwriting issues - students shouldn't be penalized for technology limitations
+- If you can reasonably interpret what the student meant, mark it CORRECT
+- When in doubt between correct/incorrect, choose CORRECT
+- Spelling, spacing, and capitalization errors should almost NEVER cause an answer to be marked wrong
+- Focus on whether the CONCEPT/KNOWLEDGE is demonstrated, not perfect spelling
 
 Return a JSON array with this structure for each question:
 {
@@ -92,32 +92,50 @@ Return a JSON array with this structure for each question:
   "notes": "Optional explanation, especially for OCR errors or alternative answers"
 }
 
-Guidelines for Grading:
+GRADING RULES (in order of priority):
 
-**ALWAYS MARK AS CORRECT (isCorrect: true) with MEDIUM confidence** if the answer is clearly recognizable despite:
-  * Minor spelling errors: "Parris" = "Paris", "Portsmonth" = "Portsmouth", "Huddersfeild" = "Huddersfield"
-  * Missing/extra letters: "Portsmoth" = "Portsmouth", "Leceister" = "Leicester"
-  * Capitalization errors: "milton keynes Dons" = "Milton Keynes Dons", "aston villa" = "Aston Villa"
-  * Spacing errors: "Notting ham forest" = "Nottingham Forest", "photo synthesis" = "Photosynthesis"
-  * Letter substitutions: "Portsmonth" = "Portsmouth" (o/ou confusion)
-  * These should be marked as isCorrect: true, confidence: "medium" with a note like "Minor spelling/OCR error"
+🟢 **ALWAYS MARK AS CORRECT (isCorrect: true)** for:
 
-**MARK AS CORRECT (isCorrect: true) with HIGH confidence** for:
-  * Exact matches or near-exact matches with only trivial differences
-  * Synonyms: "H2O" = "water"
-  * Partial names when unambiguous: "Shakespeare" = "William Shakespeare"
+1. **HIGH confidence** - Perfect or near-perfect answers:
+   * Exact matches
+   * Synonyms: "H2O" = "water", "automobile" = "car"
+   * Partial names when unambiguous: "Shakespeare" = "William Shakespeare", "Obama" = "Barack Obama"
+   * Abbreviations: "USA" = "United States", "UK" = "United Kingdom"
 
-**MARK AS INCORRECT (isCorrect: false) with LOW confidence** for:
-  * Different but possibly valid alternative answers or interpretations
-  * Add detailed explanatory notes for human review
-  * Example: Answer is "The Sun" when expecting "Nuclear fusion"
+2. **MEDIUM confidence** - Answers with OCR/handwriting issues but CLEARLY recognizable:
+   * Minor spelling errors: "Parris" = "Paris", "Portsmonth" = "Portsmouth", "Huddersfeild" = "Huddersfield"
+   * Multiple spelling errors: "Manchster Untied" = "Manchester United"
+   * Missing/extra letters: "Portsmoth" = "Portsmouth", "Leceister" = "Leicester", "Photosynthsis" = "Photosynthesis"
+   * Capitalization errors: "milton keynes Dons" = "Milton Keynes Dons", "aston villa" = "Aston Villa"
+   * Spacing errors: "Notting ham forest" = "Nottingham Forest", "photo synthesis" = "Photosynthesis"
+   * Letter substitutions: "Portsmonth" = "Portsmouth" (o/ou), "Liverp00l" = "Liverpool" (0/o)
+   * Phonetic spellings: "Lester" = "Leicester", "Portsmuth" = "Portsmouth"
+   * Combined issues: "manchestr untied" = "Manchester United"
+   * Add note like "Recognized despite OCR/spelling errors"
 
-**MARK AS INCORRECT (isCorrect: false) with HIGH confidence** for:
-  * Completely wrong answers with different meaning
-  * Empty or "N/A" submitted answers
-  * Answers that are clearly a different subject
+3. **MEDIUM confidence** - Alternative correct answers not in answer key:
+   * Different but equally valid answers: "photosynthesis" when expecting "converts sunlight to energy"
+   * More specific or more general answers that are technically correct
+   * Add note explaining why this is also correct
 
-CRITICAL RULE: If you can recognize what the student meant to write, even with spelling errors, mark it as CORRECT. The student demonstrated knowledge of the correct answer. Only mark as incorrect if it's genuinely wrong or ambiguous.
+⚠️ **MARK AS INCORRECT (isCorrect: false) with LOW confidence** ONLY for:
+   * Answers that MIGHT be valid alternative interpretations but are quite different from expected
+   * You're uncertain if the alternative interpretation is valid
+   * Add detailed explanatory notes for human review
+   * Example: Answer is "The Sun" when expecting "Nuclear fusion" - related but not the same
+
+❌ **MARK AS INCORRECT (isCorrect: false) with HIGH confidence** ONLY for:
+   * Answers that are COMPLETELY WRONG with a totally different meaning
+   * Empty answers, "N/A", "I don't know", or no attempt
+   * Answers that are clearly about a completely different subject
+   * Even then, double-check if there could be an OCR misreading
+
+🚨 CRITICAL RULES:
+1. If you can recognize what the student meant to write (even with severe spelling errors), mark it CORRECT
+2. OCR and handwriting issues should NEVER be the sole reason for marking incorrect
+3. When uncertain, ALWAYS default to CORRECT
+4. The student demonstrated knowledge if you can decode their answer - that's what matters
+5. Be especially generous with proper nouns (names, places) which are often spelled phonetically
 
 Here are the questions to grade:
 
@@ -136,7 +154,8 @@ Return ONLY the JSON array, no other text.`;
     messages: [
       {
         role: "system",
-        content: "You are a precise exam grading assistant. Return only valid JSON arrays.",
+        content:
+          "You are a compassionate exam grading assistant who defaults to recognizing student knowledge despite OCR and handwriting issues. Return only valid JSON arrays.",
       },
       {
         role: "user",
@@ -185,7 +204,7 @@ Return ONLY the JSON array, no other text.`;
 
   const correctCount = grades.filter((g) => g.isCorrect).length;
   const possibleAlternatives = grades.filter(
-    (g) => !g.isCorrect && g.confidence === "low" && g.notes,
+    (g) => !g.isCorrect && g.confidence === "low" && g.notes
   ).length;
 
   logger.info(`Grading complete: ${correctCount}/${grades.length} correct`, {
@@ -210,7 +229,7 @@ export async function gradeAnswersWithRetry(
     model?: string;
     temperature?: number;
     maxRetries?: number;
-  } = {},
+  } = {}
 ): Promise<GradingResult> {
   const maxRetries = options.maxRetries || 3;
   let lastError: Error | null = null;
@@ -218,7 +237,12 @@ export async function gradeAnswersWithRetry(
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       logger.debug(`Grading attempt ${attempt}/${maxRetries}`);
-      return await gradeAnswers(questions, correctAnswers, submittedAnswers, options);
+      return await gradeAnswers(
+        questions,
+        correctAnswers,
+        submittedAnswers,
+        options
+      );
     } catch (err) {
       lastError = err as Error;
       logger.warn(`Grading attempt ${attempt} failed`, {

@@ -97,12 +97,10 @@ async function main() {
     } else {
       // Legacy mode: use CLI arguments
       if (!argv.folder) {
-        logger.error("Either --config or --folder must be specified");
-        console.error(
-          "❌ Error: Either --config or --folder must be specified"
+        logger.error(
+          "Either --config or --folder must be specified. " +
+          "Try: 'bun run index.ts --config config.yaml' or 'bun run index.ts --folder ./answerSheets'"
         );
-        console.error("Try: bun run index.ts --config config.yaml");
-        console.error("Or:  bun run index.ts --folder ./answerSheets");
         process.exit(1);
       }
 
@@ -110,10 +108,7 @@ async function main() {
       config = buildConfigFromArgs(argv);
 
       if (argv.grade && !argv["answer-key"]) {
-        logger.error("Grade mode requires answer key");
-        console.error(
-          "❌ Error: --grade requires --answer-key to be specified"
-        );
+        logger.error("Grade mode requires answer key: --grade requires --answer-key to be specified");
         process.exit(1);
       }
     }
@@ -122,7 +117,6 @@ async function main() {
     await runApp(config);
   } catch (err) {
     logger.error("Fatal error during quiz processing", { error: err });
-    console.error("Failed to process quizzes:", err);
     process.exit(1);
   }
 }

@@ -6,7 +6,7 @@
       "request": "launch",
       "name": "Debug with Bun",
       "program": "${workspaceFolder}/index.ts",
-      "args": ["--folder", "${workspaceFolder}/answerSheets", "--use-mock"],
+      "args": ["--config", "config.yaml"],
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",
       "restart": true,
