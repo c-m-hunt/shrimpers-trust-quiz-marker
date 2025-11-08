@@ -91,17 +91,26 @@ function configureMockMode(config: Config): void {
 }
 
 /**
- * Initialize AI grading system
+ * Initialize AI grading system and load answer key
  */
 async function initializeGrading(config: Config): Promise<{
   answerKey: Record<string, string> | null;
   questions: Record<string, string> | null;
 }> {
-  if (!config.grading?.enabled) {
-    return { answerKey: null, questions: null };
+  // Always load answer key if path provided (used for OCR corrections even without grading)
+  let answerKey: Record<string, string> | null = null;
+  if (config.grading?.answerKeyPath) {
+    try {
+      answerKey = await loadAnswerKey(config.grading.answerKeyPath);
+    } catch (err) {
+      logger.warn("Answer key not loaded, OCR corrections will be skipped", { error: err });
+    }
   }
 
-  const answerKey = await loadAnswerKey(config.grading.answerKeyPath);
+  if (!config.grading?.enabled) {
+    return { answerKey, questions: null };
+  }
+
   const questions = await loadQuestions(config.grading.questionsPath);
 
   try {
@@ -216,7 +225,8 @@ async function processQuizSubdirectory(
     const result = await processQuizFolder(
       subdir,
       config.input.pages,
-      config.input.maxQuestions || 100
+      config.input.maxQuestions || 100,
+      answerKey || undefined
     );
 
     validateEmail(result.email, subdirName);

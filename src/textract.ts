@@ -184,7 +184,11 @@ export function normaliseKV(kv: KVMap): KVMap {
  * Column 5: Question text
  * Column 6: Answer
  */
-export function extractTableAnswers(blocks: Block[], maxQ = 100): Record<string, string> {
+export function extractTableAnswers(
+  blocks: Block[],
+  maxQ = 100,
+  answerKey?: Record<string, string>,
+): Record<string, string> {
   logger.debug(`Extracting answers from table structure (maxQ: ${maxQ})`);
   let answers: Record<string, string> = {};
 
@@ -346,85 +350,313 @@ export function extractTableAnswers(blocks: Block[], maxQ = 100): Record<string,
 
   logger.info(`Extracted ${Object.keys(answers).length} answers from table`);
 
-  // Apply OCR corrections for known Textract misreads
-  answers = applyOCRCorrections(answers);
+  // Apply generic OCR corrections using answer key if provided
+  if (answerKey) {
+    answers = applyOCRCorrections(answers, answerKey);
+    logger.info(`Applied OCR corrections, final count: ${Object.keys(answers).length} answers`);
+  }
 
   return answers;
 }
 
 /**
- * Apply corrections for known OCR errors in table extraction
+ * Calculate Levenshtein distance between two strings (for fuzzy matching)
  */
-function applyOCRCorrections(answers: Record<string, string>): Record<string, string> {
-  const corrections: Record<string, Record<string, string>> = {
-    // Map of answer variations to correct answer
-    "CHINA HAND IN YOUR": { correct: "CHINA IN YOUR HAND" },
-    "CHINA IN YOUR": { correct: "CHINA IN YOUR HAND" },
-    "INSTANT": { correct: "INSTANT REPLAY" },
-    "REPLAY. THE EDGEOF": { correct: "THE EDGE OF HEAVEN" },
-    "THE EDGEOF": { correct: "THE EDGE OF HEAVEN" },
-    "HEAVEN VOULEZ Yous": { correct: "VOULEZ VOUS" },
-    "VOULEZ Yous": { correct: "VOULEZ VOUS" },
-  };
+function levenshteinDistance(str1: string, str2: string): number {
+  const len1 = str1.length;
+  const len2 = str2.length;
+  const matrix: number[][] = [];
+
+  for (let i = 0; i <= len1; i++) {
+    matrix[i] = [i];
+  }
+  for (let j = 0; j <= len2; j++) {
+    matrix[0]![j] = j;
+  }
+
+  for (let i = 1; i <= len1; i++) {
+    for (let j = 1; j <= len2; j++) {
+      const cost = str1[i - 1] === str2[j - 1] ? 0 : 1;
+      matrix[i]![j] = Math.min(
+        matrix[i - 1]![j]! + 1, // deletion
+        matrix[i]![j - 1]! + 1, // insertion
+        matrix[i - 1]![j - 1]! + cost, // substitution
+      );
+    }
+  }
+
+  return matrix[len1]![len2]!;
+}
+
+/**
+ * Normalize string for comparison (remove punctuation, spaces, lowercase)
+ */
+function normalizeForComparison(text: string): string {
+  return text
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "")
+    .trim();
+}
+
+/**
+ * Calculate similarity score between two strings (0-1, where 1 is identical)
+ * Handles alternate answers separated by / in the expected string
+ */
+function calculateSimilarity(str1: string, str2: string): number {
+  const norm1 = normalizeForComparison(str1);
+
+  // Handle alternate answers (e.g., "GLORY/HAPPY DAYS" means either is correct)
+  const alternatives = str2.split("/").map((alt) => normalizeForComparison(alt.trim()));
+
+  // Calculate similarity against all alternatives and return the best match
+  let bestSimilarity = 0;
+  for (const norm2 of alternatives) {
+    if (norm1 === norm2) return 1.0;
+    if (norm1.length === 0 || norm2.length === 0) continue;
+
+    const distance = levenshteinDistance(norm1, norm2);
+    const maxLen = Math.max(norm1.length, norm2.length);
+    const similarity = 1 - distance / maxLen;
+
+    if (similarity > bestSimilarity) {
+      bestSimilarity = similarity;
+    }
+  }
+
+  return bestSimilarity;
+}
+
+/**
+ * Apply generic OCR corrections using fuzzy matching against an optional answer key
+ */
+function applyOCRCorrections(
+  answers: Record<string, string>,
+  answerKey?: Record<string, string>,
+): Record<string, string> {
+  if (!answerKey) {
+    // No answer key provided, return as-is
+    logger.debug("No answer key provided, skipping OCR corrections");
+    return answers;
+  }
 
   const corrected: Record<string, string> = {};
+  const usedAnswers = new Set<string>(); // Track which correct answers we've already assigned
 
-  // First pass: apply simple corrections
-  for (const [qNum, answer] of Object.entries(answers)) {
-    const trimmed = answer.trim();
-    if (corrections[trimmed]) {
-      const correctedAnswer = corrections[trimmed].correct;
-      corrected[qNum] = correctedAnswer;
-      logger.debug(`OCR correction applied: ${qNum} "${trimmed}" -> "${correctedAnswer}"`);
-    } else {
-      corrected[qNum] = answer;
-    }
-  }
+  // Convert answers to array for easier manipulation
+  const answerEntries = Object.entries(answers);
 
-  // Second pass: handle merged/split answers
-  // Check for Q36="BACK" + Q37="STABBERS" pattern (should be Q36="BACK STABBERS")
-  if (corrected.Q36 === "BACK" && corrected.Q37 === "STABBERS") {
-    logger.debug(`Merging split answer: Q36 "BACK" + Q37 "STABBERS" -> Q36 "BACK STABBERS"`);
-    corrected.Q36 = "BACK STABBERS";
+  // First pass: detect merged answers (one cell contains multiple correct answers)
+  for (const [qNum, extractedAnswer] of answerEntries) {
+    const normalized = normalizeForComparison(extractedAnswer);
 
-    // Shift all subsequent answers up by one (Q38->Q37, Q39->Q38, etc.)
-    for (let i = 37; i <= 49; i++) {
-      const currentKey = `Q${i}`;
-      const nextKey = `Q${i + 1}`;
-      if (corrected[nextKey]) {
-        corrected[currentKey] = corrected[nextKey];
-        logger.debug(`Shifting Q${i + 1} -> Q${i}: "${corrected[nextKey]}"`);
-      } else {
-        delete corrected[currentKey];
+    // Check if this extracted answer contains multiple correct answers concatenated
+    let foundMerge = false;
+    for (let i = 1; i <= 50 && !foundMerge; i++) {
+      const correctKey = `Q${i}`;
+      const correctAnswer = answerKey[correctKey];
+      if (!correctAnswer || usedAnswers.has(correctKey)) continue;
+
+      const normalizedCorrect = normalizeForComparison(correctAnswer);
+
+      // Check if extracted answer starts with this correct answer
+      if (normalized.startsWith(normalizedCorrect) && normalized.length > normalizedCorrect.length) {
+        const remainder = normalized.substring(normalizedCorrect.length);
+
+        // Check if remainder matches another correct answer
+        for (let j = 1; j <= 50; j++) {
+          const nextKey = `Q${j}`;
+          const nextAnswer = answerKey[nextKey];
+          if (!nextAnswer || usedAnswers.has(nextKey) || j <= i) continue;
+
+          const normalizedNext = normalizeForComparison(nextAnswer);
+          if (remainder === normalizedNext || calculateSimilarity(remainder, normalizedNext) > 0.8) {
+            // Found a merge! This cell contains answers for both Q{i} and Q{j}
+            logger.debug(
+              `Detected merge in ${qNum}: "${extractedAnswer}" contains "${correctAnswer}" + "${nextAnswer}"`,
+            );
+
+            // Assign the first part to current question
+            corrected[qNum] = correctAnswer;
+            usedAnswers.add(correctKey);
+
+            // Store the second part for reassignment in second pass
+            foundMerge = true;
+            break;
+          }
+        }
       }
     }
-    delete corrected.Q50; // Remove last item since we shifted everything up
+
+    if (!foundMerge) {
+      // No merge detected, keep for second pass
+      corrected[qNum] = extractedAnswer;
+    }
   }
 
-  // After merging, check Q37 (which now contains what was Q38) for merged answers
-  if (corrected.Q37 && corrected.Q37.includes("RIDDLE") && corrected.Q37.includes("HAPPY")) {
-    const text = corrected.Q37.trim();
-    // Split on common answer boundaries
-    if (text === "THE RIDDLE HAPPY DAYS") {
-      logger.debug(`Splitting merged answer: Q37 "THE RIDDLE HAPPY DAYS" -> Q37 "THE RIDDLE", Q38 "HAPPY DAYS"`);
+  // Second pass: fuzzy match each extracted answer to the best correct answer
+  for (const [qNum, extractedAnswer] of Object.entries(corrected)) {
+    const questionNum = parseInt(qNum.match(/\d+/)?.[0] || "0", 10);
+    const expectedKey = `Q${questionNum}`;
+    const expectedAnswer = answerKey[expectedKey];
 
-      // Shift everything after Q37 down by one to make room (Q49->Q50, Q48->Q49, ..., Q38->Q39)
-      for (let i = 49; i >= 38; i--) {
-        const currentKey = `Q${i}`;
-        const nextKey = `Q${i + 1}`;
-        if (corrected[currentKey]) {
-          corrected[nextKey] = corrected[currentKey];
-          logger.debug(`Shifting Q${i} -> Q${i + 1}: "${corrected[currentKey]}"`);
+    if (!expectedAnswer) {
+      logger.debug(`No expected answer for ${qNum}, keeping extracted: "${extractedAnswer}"`);
+      continue;
+    }
+
+    const normalized = normalizeForComparison(extractedAnswer);
+    const normalizedExpected = normalizeForComparison(expectedAnswer);
+
+    // Calculate similarity to expected answer
+    const similarity = calculateSimilarity(extractedAnswer, expectedAnswer);
+
+    if (similarity >= 0.85) {
+      // Very close match, likely just minor OCR errors
+      if (normalized !== normalizedExpected) {
+        logger.debug(
+          `High similarity (${similarity.toFixed(2)}) for ${qNum}: "${extractedAnswer}" -> "${expectedAnswer}"`,
+        );
+        corrected[qNum] = expectedAnswer;
+      }
+    } else if (similarity < 0.5) {
+      // Poor match, might be wrong answer or shifted
+      // Check if extracted answer is a good match for a nearby correct answer
+      let bestMatch = { key: "", answer: "", similarity: 0 };
+
+      for (let offset = -3; offset <= 3; offset++) {
+        if (offset === 0) continue;
+        const nearbyNum = questionNum + offset;
+        if (nearbyNum < 1 || nearbyNum > 50) continue;
+
+        const nearbyKey = `Q${nearbyNum}`;
+        const nearbyAnswer = answerKey[nearbyKey];
+        if (!nearbyAnswer || usedAnswers.has(nearbyKey)) continue;
+
+        const nearbySimilarity = calculateSimilarity(extractedAnswer, nearbyAnswer);
+        if (nearbySimilarity > bestMatch.similarity) {
+          bestMatch = { key: nearbyKey, answer: nearbyAnswer, similarity: nearbySimilarity };
         }
       }
 
-      // Now set the split values
-      corrected.Q37 = "THE RIDDLE";
-      corrected.Q38 = "HAPPY DAYS";
+      if (bestMatch.similarity > 0.85) {
+        logger.debug(
+          `Found better match (${bestMatch.similarity.toFixed(2)}) for ${qNum}: "${extractedAnswer}" matches ${bestMatch.key} "${bestMatch.answer}"`,
+        );
+        // Don't reassign here, just log - we'll handle shifts in third pass
+      } else {
+        logger.debug(
+          `Low similarity (${similarity.toFixed(2)}) for ${qNum}: "${extractedAnswer}" vs expected "${expectedAnswer}"`,
+        );
+      }
     }
   }
 
-  return corrected;
+  // Third pass: detect splits and reassign all affected answers
+  const finalCorrected: Record<string, string> = { ...corrected };
+  const shifts: Map<number, number> = new Map(); // Track where answers shifted from
+
+  for (let qNum = 1; qNum <= 50; qNum++) {
+    const key = `Q${qNum}`;
+    const extracted = corrected[key];
+    const expected = answerKey[key];
+
+    if (!extracted || !expected) {
+      continue;
+    }
+
+    const normalized = normalizeForComparison(extracted);
+    const normalizedExpected = normalizeForComparison(expected);
+
+    // Check if extracted is a prefix of expected (incomplete fragment)
+    if (
+      normalizedExpected.startsWith(normalized) &&
+      normalized.length < normalizedExpected.length &&
+      normalized.length > 3
+    ) {
+      // Check if next question has the remainder
+      const nextKey = `Q${qNum + 1}`;
+      const nextExtracted = corrected[nextKey];
+      if (nextExtracted) {
+        const normalizedNext = normalizeForComparison(nextExtracted);
+        const remainder = normalizedExpected.substring(normalized.length);
+
+        if (normalizedNext === remainder || normalizedNext.startsWith(remainder)) {
+          logger.debug(
+            `Detected split answer: ${key} "${extracted}" + ${nextKey} "${nextExtracted}" = "${expected}"`,
+          );
+
+          // Fix current question
+          finalCorrected[key] = expected;
+
+          // The next question's cell was stolen, so shift answers forward
+          // Q(n+1) should get answer from Q(n+2), Q(n+2) from Q(n+3), etc.
+          for (let shiftNum = qNum + 1; shiftNum < 50; shiftNum++) {
+            const shiftKey = `Q${shiftNum}`;
+            const shiftNextKey = `Q${shiftNum + 1}`;
+            const shiftExpected = answerKey[shiftKey];
+            const shiftNextExtracted = corrected[shiftNextKey];
+
+            if (!shiftExpected || !shiftNextExtracted) {
+              logger.debug(`Stopping shift at ${shiftKey}: missing expected or extracted`);
+              break;
+            }
+
+            // Check if next cell's content matches current question's expected answer
+            const similarity = calculateSimilarity(shiftNextExtracted, shiftExpected);
+            const normalizedExtracted = normalizeForComparison(shiftNextExtracted);
+
+            // Check if extracted starts with expected (handles merged answers like "THE RIDDLE HAPPY DAYS")
+            const alternatives = shiftExpected.split("/").map((alt) => normalizeForComparison(alt.trim()));
+            const startsWithExpected = alternatives.some((alt) => normalizedExtracted.startsWith(alt));
+
+            logger.debug(
+              `Shift check ${shiftKey}: extracted="${shiftNextExtracted}" vs expected="${shiftExpected}" (similarity=${similarity.toFixed(2)}, startsWithExpected=${startsWithExpected})`,
+            );
+
+            if (similarity > 0.7 || startsWithExpected) {
+              finalCorrected[shiftKey] = shiftExpected;
+              shifts.set(shiftNum, shiftNum + 1);
+              logger.debug(`Shifted ${shiftKey} = "${shiftExpected}" (from ${shiftNextKey})`);
+
+              // If extracted text starts with expected, check if there's a remainder for the next question
+              if (startsWithExpected) {
+                const matchedAlt = alternatives.find((alt) => normalizedExtracted.startsWith(alt));
+                if (matchedAlt && normalizedExtracted.length > matchedAlt.length) {
+                  const remainder = shiftNextExtracted.substring(matchedAlt.length).trim();
+                  const nextNextKey = `Q${shiftNum + 1}`;
+                  const nextNextExpected = answerKey[nextNextKey];
+
+                  if (remainder && nextNextExpected) {
+                    const remainderSimilarity = calculateSimilarity(remainder, nextNextExpected);
+                    logger.debug(
+                      `Checking remainder "${remainder}" for ${nextNextKey} vs expected "${nextNextExpected}" (similarity=${remainderSimilarity.toFixed(2)})`,
+                    );
+
+                    if (remainderSimilarity > 0.7) {
+                      finalCorrected[nextNextKey] = nextNextExpected;
+                      logger.debug(`Assigned ${nextNextKey} = "${nextNextExpected}" from remainder`);
+                    }
+                  }
+                }
+              }
+            } else {
+              // Stop shifting when similarity is too low and doesn't start with expected
+              logger.debug(
+                `Stopping shift at ${shiftKey}: similarity ${similarity.toFixed(2)} < 0.7 and doesn't start with expected`,
+              );
+              break;
+            }
+          }
+
+          // Skip ahead past the consumed cell
+          qNum++;
+          continue;
+        }
+      }
+    }
+  }
+
+  return finalCorrected;
 }
 
 /**

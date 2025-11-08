@@ -22,6 +22,7 @@ export async function processQuizFolder(
   folderPath: string,
   pageFiles?: string[], // if you want to control order; else we'll guess
   maxQuestions = 100,
+  answerKey?: Record<string, string>,
 ): Promise<QuizResult> {
   logger.info(`Processing quiz folder: ${folderPath}`, { maxQuestions });
 
@@ -43,7 +44,7 @@ export async function processQuizFolder(
     const blocks = await analyzeImageForForms(full);
 
     // Try table extraction first (for 6-column format)
-    let answers = extractTableAnswers(blocks, maxQuestions);
+    let answers = extractTableAnswers(blocks, maxQuestions, answerKey);
 
     // If no answers from table, fallback to key-value extraction
     if (Object.keys(answers).length === 0) {

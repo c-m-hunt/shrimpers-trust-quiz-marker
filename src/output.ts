@@ -23,6 +23,18 @@ function sortAnswersNumerically(answers: Record<string, string>): Record<string,
 }
 
 /**
+ * Sort grading results numerically by question number
+ */
+function sortGradingResults(grades: any[]): any[] {
+  return grades.sort((a, b) => {
+    // Extract numeric part from question keys like "Q1", "Q10", etc.
+    const numA = parseInt(a.question.match(/\d+/)?.[0] || "0", 10);
+    const numB = parseInt(b.question.match(/\d+/)?.[0] || "0", 10);
+    return numA - numB;
+  });
+}
+
+/**
  * Sort all answers in results numerically
  */
 export function sortResultsAnswers(results: ProcessedResults): ProcessedResults {
@@ -32,6 +44,13 @@ export function sortResultsAnswers(results: ProcessedResults): ProcessedResults 
     sorted[key] = {
       ...result,
       answers: sortAnswersNumerically(result.answers),
+      // Also sort grading results if present
+      ...(result.grading && {
+        grading: {
+          ...result.grading,
+          grades: sortGradingResults(result.grading.grades),
+        },
+      }),
     };
   }
 
