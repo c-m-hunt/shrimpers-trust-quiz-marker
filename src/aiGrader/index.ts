@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import { createContextLogger } from "./logger.js";
+import { createContextLogger } from "../logger.js";
 
 const logger = createContextLogger("aiGrader");
 

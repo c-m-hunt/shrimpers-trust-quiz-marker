@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { AnalyzeDocumentCommand, type Block, type Relationship } from "@aws-sdk/client-textract";
 import { textract } from "./aws.js";
-import { createContextLogger } from "./logger.js";
+import { createContextLogger } from "../logger.js";
 
 const logger = createContextLogger("textract");
 

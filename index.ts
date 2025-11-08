@@ -1,6 +1,6 @@
 import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
-import { runApp } from "./src/app.js";
+import { runApp } from "./src/app/index.js";
 import { type Config, loadConfig, validateConfig } from "./src/config.js";
 import { createContextLogger } from "./src/logger.js";
 

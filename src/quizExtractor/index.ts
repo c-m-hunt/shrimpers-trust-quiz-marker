@@ -1,13 +1,13 @@
 import path from "node:path";
-import type { GradingResult } from "./aiGrader.js";
-import { createContextLogger } from "./logger.js";
+import type { GradingResult } from "../aiGrader/index.js";
+import { createContextLogger } from "../logger.js";
 import {
   analyzeImageForForms,
   extractAnswers,
   extractKeyValues,
   extractTableAnswers,
   normaliseKV,
-} from "./textract.js";
+} from "../textract/index.js";
 
 const logger = createContextLogger("quizExtractor");
 

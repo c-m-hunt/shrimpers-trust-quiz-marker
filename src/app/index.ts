@@ -1,13 +1,13 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
-import { gradeAnswersWithRetry, initializeOpenAI } from "./aiGrader.js";
-import type { Config } from "./config.js";
-import { createContextLogger } from "./logger.js";
-import type { ProcessedResults } from "./output.js";
-import { sortResultsAnswers, writeResults } from "./output.js";
-import type { QuizResult } from "./quizExtractor.js";
-import { processQuizFolder } from "./quizExtractor.js";
-import { setMockMode, setSaveMockData } from "./textract.js";
+import { gradeAnswersWithRetry, initializeOpenAI } from "../aiGrader/index.js";
+import type { Config } from "../config.js";
+import { createContextLogger } from "../logger.js";
+import type { ProcessedResults } from "../output/index.js";
+import { sortResultsAnswers, writeResults } from "../output/index.js";
+import type { QuizResult } from "../quizExtractor/index.js";
+import { processQuizFolder } from "../quizExtractor/index.js";
+import { setMockMode, setSaveMockData } from "../textract/index.js";
 
 const logger = createContextLogger("app");
 

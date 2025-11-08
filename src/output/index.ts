@@ -1,8 +1,8 @@
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { OutputConfig } from "./config.js";
-import { createContextLogger } from "./logger.js";
-import type { QuizResult } from "./quizExtractor.js";
+import type { OutputConfig } from "../config.js";
+import { createContextLogger } from "../logger.js";
+import type { QuizResult } from "../quizExtractor/index.js";
 
 const logger = createContextLogger("output");
 
