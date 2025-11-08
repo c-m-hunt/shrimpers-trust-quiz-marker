@@ -84,7 +84,7 @@ export class FileOutputHandler implements OutputHandler {
       await writeFile(this.filePath, jsonContent, "utf-8");
 
       logger.info(`Successfully wrote results to ${this.filePath}`, {
-        studentCount: Object.keys(results).length,
+        entryCount: Object.keys(results).length,
         fileSize: jsonContent.length,
       });
     } catch (error) {
@@ -134,6 +134,395 @@ export class ExcelOutputHandler implements OutputHandler {
 }
 
 /**
+ * HTML Report output handler - generates an interactive HTML report
+ */
+export class HtmlReportOutputHandler implements OutputHandler {
+  constructor(private filePath: string) {}
+
+  async write(results: ProcessedResults): Promise<void> {
+    logger.info(`Writing HTML report to: ${this.filePath}`);
+
+    try {
+      const dir = path.dirname(this.filePath);
+      // Ensure directory exists
+      await import("node:fs/promises").then((fs) => fs.mkdir(dir, { recursive: true }));
+
+      // Sort results numerically
+      const sortedResults = sortResultsAnswers(results);
+
+      // Generate HTML content
+      const htmlContent = this.generateHtmlReport(sortedResults);
+      await writeFile(this.filePath, htmlContent, "utf-8");
+
+      logger.info(`Successfully wrote HTML report to ${this.filePath}`, {
+        entryCount: Object.keys(results).length,
+        fileSize: htmlContent.length,
+      });
+    } catch (error) {
+      logger.error(`Failed to write HTML report`, {
+        error,
+        filePath: this.filePath,
+      });
+      throw error;
+    }
+  }
+
+  private generateHtmlReport(results: ProcessedResults): string {
+    // Embed the results data directly in the HTML
+    const dataJson = JSON.stringify(results, null, 2);
+
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quiz Results Report</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #f5f5f5;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 100%;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            padding: 20px 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        h1 {
+            font-size: 24px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .summary {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+
+        .table-wrapper {
+            position: relative;
+            overflow-x: auto;
+            max-height: calc(100vh - 200px);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            font-size: 13px;
+        }
+
+        th, td {
+            padding: 12px 16px;
+            text-align: left;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        thead th {
+            position: sticky;
+            top: 0;
+            background: #f8f9fa;
+            font-weight: 600;
+            color: #333;
+            z-index: 10;
+            border-bottom: 2px solid #dee2e6;
+        }
+
+        /* Sticky first two columns */
+        th:first-child,
+        td:first-child {
+            position: sticky;
+            left: 0;
+            background: #fff;
+            z-index: 5;
+            font-weight: 600;
+            min-width: 80px;
+            box-shadow: 2px 0 4px rgba(0,0,0,0.05);
+        }
+
+        thead th:first-child {
+            z-index: 15;
+            background: #f8f9fa;
+        }
+
+        th:nth-child(2),
+        td:nth-child(2) {
+            position: sticky;
+            left: 80px;
+            background: #fff;
+            z-index: 5;
+            min-width: 250px;
+            max-width: 250px;
+            font-weight: 500;
+            box-shadow: 2px 0 4px rgba(0,0,0,0.05);
+        }
+
+        thead th:nth-child(2) {
+            z-index: 15;
+            background: #f8f9fa;
+        }
+
+        /* Entry columns */
+        th:not(:first-child):not(:nth-child(2)),
+        td:not(:first-child):not(:nth-child(2)) {
+            min-width: 220px;
+            max-width: 220px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* Color coding based on correctness and confidence */
+        .correct-high {
+            background-color: #d4edda;
+            color: #155724;
+        }
+
+        .correct-medium {
+            background-color: #e7f3e7;
+            color: #155724;
+        }
+
+        .incorrect-low {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+
+        .incorrect-high {
+            background-color: #f8d7da;
+            color: #721c24;
+            font-weight: 600;
+        }
+
+        .no-grading {
+            background-color: #e2e3e5;
+            color: #383d41;
+        }
+
+        tbody tr:hover td:not(:first-child):not(:nth-child(2)) {
+            opacity: 0.8;
+        }
+
+        .entry-header {
+            text-align: center;
+            font-weight: 600;
+        }
+
+        .score {
+            display: block;
+            font-size: 11px;
+            font-weight: normal;
+            margin-top: 4px;
+            opacity: 0.8;
+        }
+
+        /* Tooltip */
+        .has-tooltip {
+            cursor: help;
+            position: relative;
+        }
+
+        .question-number {
+            color: #666;
+            font-size: 12px;
+        }
+
+        .correct-answer {
+            color: #333;
+            font-size: 13px;
+        }
+
+        .legend {
+            padding: 20px 30px;
+            background: #f8f9fa;
+            border-top: 1px solid #dee2e6;
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            align-items: center;
+            font-size: 12px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Quiz Results Report</h1>
+            <div class="summary" id="summary"></div>
+        </div>
+
+        <div class="table-wrapper">
+            <table id="resultsTable">
+                <thead>
+                    <tr id="headerRow"></tr>
+                </thead>
+                <tbody id="tableBody"></tbody>
+            </table>
+        </div>
+
+        <div class="legend">
+            <strong>Legend:</strong>
+            <div class="legend-item">
+                <div class="legend-color correct-high"></div>
+                <span>Correct (High Confidence)</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color correct-medium"></div>
+                <span>Correct (Medium Confidence)</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color incorrect-low"></div>
+                <span>Incorrect (Low Confidence)</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color incorrect-high"></div>
+                <span>Incorrect (High Confidence)</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color no-grading"></div>
+                <span>No Grading Data</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Embedded data
+        const data = ${dataJson};
+
+        function renderReport(data) {
+            const entries = Object.keys(data).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+
+            // Get all questions (Q1-Q50)
+            const questions = [];
+            for (let i = 1; i <= 50; i++) {
+                questions.push(\`Q\${i}\`);
+            }
+
+            // Build answer key from first entrant's grading data
+            const answerKey = {};
+            const firstentry = data[entries[0]];
+            if (firstentry.grading) {
+                firstentry.grading.grades.forEach(grade => {
+                    answerKey[grade.question] = grade.correctAnswer;
+                });
+            }
+
+            // Render header
+            const headerRow = document.getElementById('headerRow');
+            headerRow.innerHTML = \`
+                <th class="question-number">Q#</th>
+                <th class="correct-answer">Correct Answer</th>
+                \${entries.map(entryId => {
+                    const entry = data[entryId];
+                    const score = entry.grading
+                        ? \`\${entry.grading.correctAnswers}/\${entry.grading.totalQuestions}\`
+                        : 'N/A';
+                    const percentage = entry.grading
+                        ? Math.round((entry.grading.correctAnswers / entry.grading.totalQuestions) * 100)
+                        : 0;
+                    return \`<th class="entry-header">
+                        Entry \${entryId}
+                        <span class="score">\${score} (\${percentage}%)</span>
+                    </th>\`;
+                }).join('')}
+            \`;
+
+            // Render table body
+            const tbody = document.getElementById('tableBody');
+            tbody.innerHTML = questions.map(qNum => {
+                const correctAnswer = answerKey[qNum] || 'N/A';
+
+                return \`
+                    <tr>
+                        <td class="question-number">\${qNum}</td>
+                        <td class="correct-answer">\${correctAnswer}</td>
+                        \${entries.map(entryId => {
+                            const entry = data[entryId];
+                            const submittedAnswer = entry.answers[qNum] || '';
+
+                            // Find grading info for this question
+                            let gradeInfo = null;
+                            if (entry.grading && entry.grading.grades) {
+                                gradeInfo = entry.grading.grades.find(g => g.question === qNum);
+                            }
+
+                            let cssClass = 'no-grading';
+                            let title = submittedAnswer;
+
+                            if (gradeInfo) {
+                                if (gradeInfo.isCorrect) {
+                                    cssClass = gradeInfo.confidence === 'high' ? 'correct-high' : 'correct-medium';
+                                } else {
+                                    cssClass = gradeInfo.confidence === 'high' ? 'incorrect-high' : 'incorrect-low';
+                                }
+
+                                // Build tooltip
+                                title = \`Submitted: \${gradeInfo.submittedAnswer}\\nCorrect: \${gradeInfo.correctAnswer}\\nConfidence: \${gradeInfo.confidence}\`;
+                                if (gradeInfo.notes) {
+                                    title += \`\\nNotes: \${gradeInfo.notes}\`;
+                                }
+                            }
+
+                            return \`<td class="\${cssClass} has-tooltip" title="\${title}">\${submittedAnswer}</td>\`;
+                        }).join('')}
+                    </tr>
+                \`;
+            }).join('');
+
+            // Update summary
+            const totalentries = entries.length;
+            const avgScores = entries
+                .filter(id => data[id].grading)
+                .map(id => (data[id].grading.correctAnswers / data[id].grading.totalQuestions) * 100);
+            const avgScore = avgScores.length > 0
+                ? (avgScores.reduce((a, b) => a + b, 0) / avgScores.length).toFixed(1)
+                : 0;
+
+            document.getElementById('summary').innerHTML = \`
+                \${totalentries} \${totalentries !== 1 ? 'entries' : 'entry'} |
+                \${questions.length} questions |
+                Average score: \${avgScore}%
+            \`;
+        }
+
+        // Render on load
+        renderReport(data);
+    </script>
+</body>
+</html>
+`;
+  }
+}
+
+/**
  * Factory function to create output handlers from configuration
  */
 export function createOutputHandler(config: OutputConfig): OutputHandler {
@@ -145,6 +534,12 @@ export function createOutputHandler(config: OutputConfig): OutputHandler {
         throw new Error("File output requires 'path' configuration");
       }
       return new FileOutputHandler(config.path);
+
+    case "htmlReport":
+      if (!config.path) {
+        throw new Error("HTML Report output requires 'path' configuration");
+      }
+      return new HtmlReportOutputHandler(config.path);
 
     case "googleSheets":
       if (!config.spreadsheetId || !config.sheetName) {

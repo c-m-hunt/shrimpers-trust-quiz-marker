@@ -5,8 +5,8 @@ import { createContextLogger } from "./logger.js";
 const logger = createContextLogger("config");
 
 export type OutputConfig = {
-  type: "file" | "googleSheets" | "excel";
-  path?: string; // For file and excel outputs
+  type: "file" | "htmlReport" | "googleSheets" | "excel";
+  path?: string; // For file, htmlReport, and excel outputs
   spreadsheetId?: string; // For Google Sheets
   sheetName?: string; // For Google Sheets
 };
@@ -94,6 +94,9 @@ export function validateConfig(config: Config): void {
   for (const output of config.output) {
     if (output.type === "file" && !output.path) {
       throw new Error("output.path is required for file output type");
+    }
+    if (output.type === "htmlReport" && !output.path) {
+      throw new Error("output.path is required for htmlReport output type");
     }
     if (output.type === "googleSheets" && (!output.spreadsheetId || !output.sheetName)) {
       throw new Error(

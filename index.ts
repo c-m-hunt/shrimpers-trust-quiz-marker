@@ -47,8 +47,7 @@ const argv = await yargs(hideBin(process.argv))
   })
   .option("questions", {
     type: "string",
-    describe:
-      "Path to JSON file with question texts (optional, for better grading)",
+    describe: "Path to JSON file with question texts (optional, for better grading)",
   })
   .option("output", {
     type: "string",
@@ -99,7 +98,7 @@ async function main() {
       if (!argv.folder) {
         logger.error(
           "Either --config or --folder must be specified. " +
-          "Try: 'bun run index.ts --config config.yaml' or 'bun run index.ts --folder ./answerSheets'"
+            "Try: 'bun run index.ts --config config.yaml' or 'bun run index.ts --folder ./answerSheets'",
         );
         process.exit(1);
       }
@@ -108,7 +107,9 @@ async function main() {
       config = buildConfigFromArgs(argv);
 
       if (argv.grade && !argv["answer-key"]) {
-        logger.error("Grade mode requires answer key: --grade requires --answer-key to be specified");
+        logger.error(
+          "Grade mode requires answer key: --grade requires --answer-key to be specified",
+        );
         process.exit(1);
       }
     }

@@ -54,12 +54,12 @@ export async function processQuizFolder(
       // pick up name/email wherever they appear
       if (!name && kv.name) {
         name = kv.name;
-        logger.info(`Found student name: ${name}`);
+        logger.info(`Found entry name: ${name}`);
         delete kv.name; // Avoid it being processed as an answer
       }
       if (!email && kv.email) {
         email = kv.email;
-        logger.info(`Found student email: ${email}`);
+        logger.info(`Found entry email: ${email}`);
         delete kv.email; // Avoid it being processed as an answer
       }
 
@@ -69,11 +69,11 @@ export async function processQuizFolder(
       const kv = normaliseKV(extractKeyValues(blocks));
       if (!name && kv.name) {
         name = kv.name;
-        logger.info(`Found student name: ${name}`);
+        logger.info(`Found entry name: ${name}`);
       }
       if (!email && kv.email) {
         email = kv.email;
-        logger.info(`Found student email: ${email}`);
+        logger.info(`Found entry email: ${email}`);
       }
     }
 

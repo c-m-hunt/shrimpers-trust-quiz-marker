@@ -256,9 +256,7 @@ export function extractTableAnswers(
 
     for (const [rowIndex, rowCells] of sortedRows) {
       // Sort cells by column index
-      const sortedCells = rowCells.sort(
-        (a, b) => (a.ColumnIndex ?? 0) - (b.ColumnIndex ?? 0),
-      );
+      const sortedCells = rowCells.sort((a, b) => (a.ColumnIndex ?? 0) - (b.ColumnIndex ?? 0));
 
       // Skip if not 6 columns
       if (sortedCells.length !== 6) {
@@ -313,9 +311,7 @@ export function extractTableAnswers(
         expectedQ1++;
       } else if (!answer1 && expectedQ1 >= 19 && expectedQ1 <= 22) {
         // Debug missing Q19-22
-        logger.debug(
-          `Row ${rowIndex}: No answer for expected Q${expectedQ1}, col3="${answer1}"`,
-        );
+        logger.debug(`Row ${rowIndex}: No answer for expected Q${expectedQ1}, col3="${answer1}"`);
         expectedQ1++;
       }
 
@@ -459,7 +455,10 @@ function applyOCRCorrections(
       const normalizedCorrect = normalizeForComparison(correctAnswer);
 
       // Check if extracted answer starts with this correct answer
-      if (normalized.startsWith(normalizedCorrect) && normalized.length > normalizedCorrect.length) {
+      if (
+        normalized.startsWith(normalizedCorrect) &&
+        normalized.length > normalizedCorrect.length
+      ) {
         const remainder = normalized.substring(normalizedCorrect.length);
 
         // Check if remainder matches another correct answer
@@ -469,7 +468,10 @@ function applyOCRCorrections(
           if (!nextAnswer || usedAnswers.has(nextKey) || j <= i) continue;
 
           const normalizedNext = normalizeForComparison(nextAnswer);
-          if (remainder === normalizedNext || calculateSimilarity(remainder, normalizedNext) > 0.8) {
+          if (
+            remainder === normalizedNext ||
+            calculateSimilarity(remainder, normalizedNext) > 0.8
+          ) {
             // Found a merge! This cell contains answers for both Q{i} and Q{j}
             logger.debug(
               `Detected merge in ${qNum}: "${extractedAnswer}" contains "${correctAnswer}" + "${nextAnswer}"`,
@@ -606,8 +608,12 @@ function applyOCRCorrections(
             const normalizedExtracted = normalizeForComparison(shiftNextExtracted);
 
             // Check if extracted starts with expected (handles merged answers like "THE RIDDLE HAPPY DAYS")
-            const alternatives = shiftExpected.split("/").map((alt) => normalizeForComparison(alt.trim()));
-            const startsWithExpected = alternatives.some((alt) => normalizedExtracted.startsWith(alt));
+            const alternatives = shiftExpected
+              .split("/")
+              .map((alt) => normalizeForComparison(alt.trim()));
+            const startsWithExpected = alternatives.some((alt) =>
+              normalizedExtracted.startsWith(alt),
+            );
 
             logger.debug(
               `Shift check ${shiftKey}: extracted="${shiftNextExtracted}" vs expected="${shiftExpected}" (similarity=${similarity.toFixed(2)}, startsWithExpected=${startsWithExpected})`,
@@ -634,7 +640,9 @@ function applyOCRCorrections(
 
                     if (remainderSimilarity > 0.7) {
                       finalCorrected[nextNextKey] = nextNextExpected;
-                      logger.debug(`Assigned ${nextNextKey} = "${nextNextExpected}" from remainder`);
+                      logger.debug(
+                        `Assigned ${nextNextKey} = "${nextNextExpected}" from remainder`,
+                      );
                     }
                   }
                 }
@@ -650,7 +658,6 @@ function applyOCRCorrections(
 
           // Skip ahead past the consumed cell
           qNum++;
-          continue;
         }
       }
     }

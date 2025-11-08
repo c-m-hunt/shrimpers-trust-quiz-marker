@@ -32,9 +32,7 @@ async function getSubdirectories(folderPath: string): Promise<string[]> {
 /**
  * Load answer key from file
  */
-async function loadAnswerKey(
-  filePath: string
-): Promise<Record<string, string>> {
+async function loadAnswerKey(filePath: string): Promise<Record<string, string>> {
   try {
     const content = await readFile(filePath, "utf-8");
     const answerKey = JSON.parse(content);
@@ -52,9 +50,7 @@ async function loadAnswerKey(
 /**
  * Load questions from file (optional)
  */
-async function loadQuestions(
-  filePath: string | undefined
-): Promise<Record<string, string> | null> {
+async function loadQuestions(filePath: string | undefined): Promise<Record<string, string> | null> {
   if (!filePath) {
     return null;
   }
@@ -70,7 +66,7 @@ async function loadQuestions(
   } catch (err) {
     logger.warn("Failed to load questions file", {
       path: filePath,
-      error: err
+      error: err,
     });
     return null;
   }
@@ -103,7 +99,9 @@ async function initializeGrading(config: Config): Promise<{
     try {
       answerKey = await loadAnswerKey(config.grading.answerKeyPath);
     } catch (err) {
-      logger.warn("Answer key not loaded, OCR corrections will be skipped", { error: err });
+      logger.warn("Answer key not loaded, OCR corrections will be skipped", {
+        error: err,
+      });
     }
   }
 
@@ -131,7 +129,7 @@ function validateEmail(email: string | undefined, subdirName: string): void {
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     logger.warn(`Suspicious email format for ${subdirName}`, {
       email,
-      student: subdirName
+      entry: subdirName,
     });
   }
 }
@@ -144,7 +142,7 @@ async function gradeQuiz(
   result: QuizResult,
   questions: Record<string, string> | null,
   answerKey: Record<string, string>,
-  config: Config
+  config: Config,
 ): Promise<void> {
   if (!config.grading?.enabled) {
     return;
@@ -153,23 +151,15 @@ async function gradeQuiz(
   logger.info(`Starting AI grading for ${subdirName}`);
 
   try {
-    const grading = await gradeAnswersWithRetry(
-      questions || {},
-      answerKey,
-      result.answers,
-      {
-        model: config.grading.model || "gpt-4o-mini",
-        temperature: config.grading.temperature || 0.3,
-      }
-    );
+    const grading = await gradeAnswersWithRetry(questions || {}, answerKey, result.answers, {
+      model: config.grading.model || "gpt-4o-mini",
+      temperature: config.grading.temperature || 0.3,
+    });
 
     result.grading = grading;
 
     const score = `${grading.correctAnswers}/${grading.totalQuestions}`;
-    const percentage = (
-      (grading.correctAnswers / grading.totalQuestions) *
-      100
-    ).toFixed(1);
+    const percentage = ((grading.correctAnswers / grading.totalQuestions) * 100).toFixed(1);
 
     logger.info(`AI grading complete for ${subdirName}`, {
       score,
@@ -190,7 +180,7 @@ async function gradeQuiz(
 
       logger.info(
         `Found ${grading.possibleAlternatives} possible alternative answers for ${subdirName}`,
-        { questionsToReview }
+        { questionsToReview },
       );
     }
   } catch (err) {
@@ -213,11 +203,11 @@ async function processQuizSubdirectory(
   subdir: string,
   config: Config,
   answerKey: Record<string, string> | null,
-  questions: Record<string, string> | null
+  questions: Record<string, string> | null,
 ): Promise<QuizResult> {
   const subdirName = path.basename(subdir);
   logger.info("Starting processing", {
-    student: subdirName,
+    entry: subdirName,
     path: subdir,
   });
 
@@ -226,7 +216,7 @@ async function processQuizSubdirectory(
       subdir,
       config.input.pages,
       config.input.maxQuestions || 100,
-      answerKey || undefined
+      answerKey || undefined,
     );
 
     validateEmail(result.email, subdirName);
@@ -264,7 +254,7 @@ async function processQuizSubdirectory(
 async function processAllQuizzes(
   config: Config,
   answerKey: Record<string, string> | null,
-  questions: Record<string, string> | null
+  questions: Record<string, string> | null,
 ): Promise<ProcessedResults> {
   const subdirectories = await getSubdirectories(config.input.folder);
 
@@ -284,22 +274,13 @@ async function processAllQuizzes(
 
   for (const subdir of subdirectories) {
     const subdirName = path.basename(subdir);
-    results[subdirName] = await processQuizSubdirectory(
-      subdir,
-      config,
-      answerKey,
-      questions
-    );
+    results[subdirName] = await processQuizSubdirectory(subdir, config, answerKey, questions);
   }
 
   logger.info("All processing complete", {
     totalProcessed: Object.keys(results).length,
-    successful: Object.values(results).filter(
-      (r) => Object.keys(r.answers).length > 0
-    ).length,
-    failed: Object.values(results).filter(
-      (r) => Object.keys(r.answers).length === 0
-    ).length,
+    successful: Object.values(results).filter((r) => Object.keys(r.answers).length > 0).length,
+    failed: Object.values(results).filter((r) => Object.keys(r.answers).length === 0).length,
   });
 
   return results;
@@ -308,10 +289,7 @@ async function processAllQuizzes(
 /**
  * Output results to configured destinations
  */
-async function outputResults(
-  results: ProcessedResults,
-  config: Config
-): Promise<void> {
+async function outputResults(results: ProcessedResults, config: Config): Promise<void> {
   if (config.output.length > 0) {
     logger.info("Writing results to configured outputs");
     await writeResults(results, config.output);
@@ -321,7 +299,9 @@ async function outputResults(
   // Always show results output (sorted numerically)
   const sortedResults = sortResultsAnswers(results);
   const separator = "=".repeat(50);
-  logger.info(`\n${separator}\nALL RESULTS:\n${separator}\n${JSON.stringify(sortedResults, null, 2)}`);
+  logger.info(
+    `\n${separator}\nALL RESULTS:\n${separator}\n${JSON.stringify(sortedResults, null, 2)}`,
+  );
 }
 
 /**
