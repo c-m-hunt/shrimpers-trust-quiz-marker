@@ -11,6 +11,8 @@ export type OutputConfig = {
   sheetName?: string; // For Google Sheets
 };
 
+export type GradingStrategy = "vision" | "textract-ai";
+
 export type Config = {
   input: {
     folder: string;
@@ -23,10 +25,12 @@ export type Config = {
   };
   grading?: {
     enabled: boolean;
+    strategy?: GradingStrategy; // Default: "vision"
     answerKeyPath: string;
     questionsPath?: string;
-    model?: string;
+    model?: string; // For vision: "gpt-4o", "gpt-4o-mini", "gpt-5" (when available). For textract-ai: "gpt-4o-mini", etc.
     temperature?: number;
+    maxTokens?: number; // For vision models
   };
   output: OutputConfig[];
 };
@@ -38,6 +42,12 @@ const defaultConfig = {
   textract: {
     useMock: false,
     saveMock: false,
+  },
+  grading: {
+    strategy: "vision" as GradingStrategy,
+    model: "gpt-4o",
+    temperature: 0.3,
+    maxTokens: 4096,
   },
 };
 
@@ -58,7 +68,12 @@ export async function loadConfig(configPath: string): Promise<Config> {
         ...defaultConfig.textract,
         ...config.textract,
       },
-      grading: config.grading,
+      grading: config.grading
+        ? {
+            ...defaultConfig.grading,
+            ...config.grading,
+          }
+        : undefined,
       output: config.output || [],
     };
 
@@ -66,6 +81,8 @@ export async function loadConfig(configPath: string): Promise<Config> {
       inputFolder: mergedConfig.input.folder,
       useMock: mergedConfig.textract.useMock,
       gradingEnabled: mergedConfig.grading?.enabled || false,
+      gradingStrategy: mergedConfig.grading?.strategy || "vision",
+      gradingModel: mergedConfig.grading?.model || "gpt-4o",
       outputCount: mergedConfig.output.length,
     });
 

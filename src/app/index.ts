@@ -8,6 +8,11 @@ import { sortResultsAnswers, writeResults } from "../output/index.js";
 import type { QuizResult } from "../quizExtractor/index.js";
 import { processQuizFolder } from "../quizExtractor/index.js";
 import { setMockMode, setSaveMockData } from "../textract/index.js";
+import {
+  gradeQuizWithVisionRetry,
+  initializeVisionGrader,
+  type VisionGradingResult,
+} from "../visionGrader/index.js";
 
 const logger = createContextLogger("app");
 
@@ -27,6 +32,19 @@ async function getSubdirectories(folderPath: string): Promise<string[]> {
   }
 
   return subdirs.sort();
+}
+
+/**
+ * Get all image files in a folder
+ */
+async function getImageFiles(folderPath: string): Promise<string[]> {
+  const entries = await readdir(folderPath);
+  const imageFiles = entries
+    .filter((f) => /\.(jpg|jpeg|png|tiff|bmp)$/i.test(f))
+    .sort()
+    .map((f) => path.join(folderPath, f));
+
+  return imageFiles;
 }
 
 /**
@@ -109,13 +127,23 @@ async function initializeGrading(config: Config): Promise<{
     return { answerKey, questions: null };
   }
 
+  const strategy = config.grading.strategy || "vision";
   const questions = await loadQuestions(config.grading.questionsPath);
 
   try {
-    initializeOpenAI();
-    logger.info("OpenAI initialized for AI grading");
+    if (strategy === "vision") {
+      initializeVisionGrader();
+      logger.info("Vision grader initialized", {
+        model: config.grading.model || "gpt-4o",
+      });
+    } else {
+      initializeOpenAI();
+      logger.info("OpenAI initialized for textract-ai grading", {
+        model: config.grading.model || "gpt-4o-mini",
+      });
+    }
   } catch (err) {
-    logger.error("Failed to initialize OpenAI", { error: err });
+    logger.error("Failed to initialize grading system", { error: err });
     throw err;
   }
 
@@ -135,7 +163,103 @@ function validateEmail(email: string | undefined, subdirName: string): void {
 }
 
 /**
- * Grade quiz answers using AI
+ * Convert vision grading result to standard grading result format
+ */
+function convertVisionGradingResult(visionResult: VisionGradingResult): QuizResult["grading"] {
+  return {
+    totalQuestions: visionResult.totalQuestions,
+    correctAnswers: visionResult.correctAnswers,
+    incorrectAnswers: visionResult.incorrectAnswers,
+    possibleAlternatives: visionResult.grades.filter((g) => !g.is_correct && g.confidence < 60)
+      .length,
+    grades: visionResult.grades.map((g) => ({
+      question: g.question_number,
+      submittedAnswer: g.user_answer,
+      correctAnswer: g.actual_answer,
+      isCorrect: g.is_correct,
+      confidence: g.confidence >= 80 ? "high" : g.confidence >= 60 ? "medium" : ("low" as const),
+      notes: g.notes,
+    })),
+  };
+}
+
+/**
+ * Process quiz using vision grading (direct image to AI)
+ */
+async function processQuizWithVision(
+  subdirName: string,
+  imagePaths: string[],
+  answerKey: Record<string, string>,
+  config: Config,
+): Promise<QuizResult> {
+  logger.info(`Processing ${subdirName} with vision grading`, {
+    imageCount: imagePaths.length,
+  });
+
+  try {
+    const visionResult = await gradeQuizWithVisionRetry(imagePaths, answerKey, {
+      model: config.grading?.model || "gpt-4o",
+      temperature: config.grading?.temperature || 0.3,
+      maxTokens: config.grading?.maxTokens || 4096,
+    });
+
+    // Convert vision grades to answers format
+    const answers: Record<string, string> = {};
+    for (const grade of visionResult.grades) {
+      answers[grade.question_number] = grade.user_answer;
+    }
+
+    const result: QuizResult = {
+      answers,
+      grading: convertVisionGradingResult(visionResult),
+    };
+
+    const score = `${visionResult.correctAnswers}/${visionResult.totalQuestions}`;
+    const percentage = ((visionResult.correctAnswers / visionResult.totalQuestions) * 100).toFixed(
+      1,
+    );
+
+    logger.info(`Vision grading complete for ${subdirName}`, {
+      score,
+      percentage: `${percentage}%`,
+      lowConfidenceCount: visionResult.grades.filter((g) => g.confidence < 60).length,
+    });
+
+    // Highlight low confidence answers
+    const lowConfidenceAnswers = visionResult.grades.filter((g) => g.confidence < 60);
+    if (lowConfidenceAnswers.length > 0) {
+      logger.warn(
+        `Found ${lowConfidenceAnswers.length} answers with low confidence (<60%) for ${subdirName}`,
+        {
+          questions: lowConfidenceAnswers.map((g) => ({
+            question: g.question_number,
+            userAnswer: g.user_answer,
+            confidence: g.confidence,
+            notes: g.notes,
+          })),
+        },
+      );
+    }
+
+    return result;
+  } catch (err) {
+    logger.error(`Vision grading failed for ${subdirName}`, { error: err });
+    return {
+      answers: {},
+      grading: {
+        error: String(err),
+        totalQuestions: 0,
+        correctAnswers: 0,
+        incorrectAnswers: 0,
+        possibleAlternatives: 0,
+        grades: [],
+      },
+    };
+  }
+}
+
+/**
+ * Grade quiz answers using AI (textract-ai strategy)
  */
 async function gradeQuiz(
   subdirName: string,
@@ -148,7 +272,7 @@ async function gradeQuiz(
     return;
   }
 
-  logger.info(`Starting AI grading for ${subdirName}`);
+  logger.info(`Starting textract-ai grading for ${subdirName}`);
 
   try {
     const grading = await gradeAnswersWithRetry(questions || {}, answerKey, result.answers, {
@@ -161,7 +285,7 @@ async function gradeQuiz(
     const score = `${grading.correctAnswers}/${grading.totalQuestions}`;
     const percentage = ((grading.correctAnswers / grading.totalQuestions) * 100).toFixed(1);
 
-    logger.info(`AI grading complete for ${subdirName}`, {
+    logger.info(`Textract-ai grading complete for ${subdirName}`, {
       score,
       percentage: `${percentage}%`,
       possibleAlternatives: grading.possibleAlternatives,
@@ -184,7 +308,7 @@ async function gradeQuiz(
       );
     }
   } catch (err) {
-    logger.error(`AI grading failed for ${subdirName}`, { error: err });
+    logger.error(`Textract-ai grading failed for ${subdirName}`, { error: err });
     result.grading = {
       error: String(err),
       totalQuestions: 0,
@@ -206,29 +330,46 @@ async function processQuizSubdirectory(
   questions: Record<string, string> | null,
 ): Promise<QuizResult> {
   const subdirName = path.basename(subdir);
+  const strategy = config.grading?.strategy || "vision";
+
   logger.info("Starting processing", {
     entry: subdirName,
     path: subdir,
+    strategy,
   });
 
   try {
-    const result = await processQuizFolder(
-      subdir,
-      config.input.pages,
-      config.input.maxQuestions || 100,
-      answerKey || undefined,
-    );
+    let result: QuizResult;
 
-    validateEmail(result.email, subdirName);
+    // Choose processing strategy
+    if (strategy === "vision" && config.grading?.enabled && answerKey) {
+      // Vision strategy: Process images directly with vision model
+      const imagePaths = await getImageFiles(subdir);
+      if (imagePaths.length === 0) {
+        throw new Error(`No image files found in ${subdir}`);
+      }
+      result = await processQuizWithVision(subdirName, imagePaths, answerKey, config);
+    } else {
+      // Textract-AI strategy: Use Textract OCR + AI grading
+      result = await processQuizFolder(
+        subdir,
+        config.input.pages,
+        config.input.maxQuestions || 100,
+        answerKey || undefined,
+      );
 
-    if (config.grading?.enabled && answerKey) {
-      await gradeQuiz(subdirName, result, questions, answerKey, config);
+      validateEmail(result.email, subdirName);
+
+      if (config.grading?.enabled && answerKey) {
+        await gradeQuiz(subdirName, result, questions, answerKey, config);
+      }
     }
 
     logger.info(`Completed processing for ${subdirName}`, {
       name: result.name,
       email: result.email,
       answerCount: Object.keys(result.answers).length,
+      strategy,
     });
 
     return result;

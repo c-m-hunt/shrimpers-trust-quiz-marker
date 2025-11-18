@@ -16,10 +16,18 @@ textract:
 # Grading configuration (optional)
 grading:
   enabled: true
+  strategy: "vision"  # "vision" (default) or "textract-ai"
+                      # vision: Direct image-to-AI grading (simpler, more accurate)
+                      # textract-ai: AWS Textract OCR + AI grading (legacy approach)
   answerKeyPath: "./2025/answer-key.json"
-  questionsPath: "./2025/questions.json"  # Optional: for better grading context
-  model: "gpt-4o-mini"  # OpenAI model to use
-  temperature: 0.3      # Temperature for AI responses
+  questionsPath: "./2025/questions.json"  # Optional: for textract-ai grading context
+
+  # Model configuration
+  model: "gpt-4o"      # For vision: "gpt-4o" (recommended), "gpt-4o-mini"
+                       # For textract-ai: "gpt-4o-mini" (recommended), "gpt-4o"
+                       # Note: GPT-5 will be supported when available
+  temperature: 0.3     # Temperature for AI responses (0.0-1.0)
+  maxTokens: 4096      # Max tokens for vision model responses
 
 # Output configuration
 output:
