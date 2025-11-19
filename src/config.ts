@@ -12,6 +12,7 @@ export type OutputConfig = {
 };
 
 export type GradingStrategy = "vision" | "textract-ai";
+export type VisionProvider = "openai" | "gemini";
 
 export type Config = {
   input: {
@@ -26,11 +27,12 @@ export type Config = {
   grading?: {
     enabled: boolean;
     strategy?: GradingStrategy; // Default: "vision"
+    provider?: VisionProvider; // For vision strategy: "openai" or "gemini" (default: "gemini")
     answerKeyPath: string;
     questionsPath?: string;
-    model?: string; // For vision: "gpt-4o", "gpt-4o-mini", "gpt-5" (when available). For textract-ai: "gpt-4o-mini", etc.
+    model?: string; // For vision: OpenAI: "gpt-4o", "gpt-4o-mini"; Gemini: "gemini-2.0-flash-exp", "gemini-1.5-pro", "gemini-1.5-flash". For textract-ai: "gpt-4o-mini", etc.
     temperature?: number;
-    maxTokens?: number; // For vision models
+    maxTokens?: number; // For OpenAI vision models
   };
   output: OutputConfig[];
 };
@@ -45,7 +47,8 @@ const defaultConfig = {
   },
   grading: {
     strategy: "vision" as GradingStrategy,
-    model: "gpt-4o",
+    provider: "gemini" as VisionProvider,
+    model: "gemini-1.5-flash", // Stable model (was gemini-2.0-flash-exp which expired)
     temperature: 0.3,
     maxTokens: 4096,
   },
@@ -82,7 +85,8 @@ export async function loadConfig(configPath: string): Promise<Config> {
       useMock: mergedConfig.textract.useMock,
       gradingEnabled: mergedConfig.grading?.enabled || false,
       gradingStrategy: mergedConfig.grading?.strategy || "vision",
-      gradingModel: mergedConfig.grading?.model || "gpt-4o",
+      gradingProvider: mergedConfig.grading?.provider || "gemini",
+      gradingModel: mergedConfig.grading?.model || "gemini-2.0-flash-exp",
       outputCount: mergedConfig.output.length,
     });
 

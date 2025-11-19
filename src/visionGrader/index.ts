@@ -1,8 +1,11 @@
 import { readFile } from "node:fs/promises";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import OpenAI from "openai";
 import { createContextLogger } from "../logger.js";
 
 const logger = createContextLogger("visionGrader");
+
+export type VisionModelProvider = "openai" | "gemini";
 
 export type VisionQuestionGrade = {
   question_number: string;
@@ -22,28 +25,50 @@ export type VisionGradingResult = {
 };
 
 let openaiClient: OpenAI | null = null;
+let geminiClient: GoogleGenerativeAI | null = null;
 
-export function initializeVisionGrader(apiKey?: string) {
-  const key = apiKey || process.env.OPENAI_API_KEY;
-  if (!key) {
-    logger.error("OpenAI API key not found");
-    throw new Error(
-      "OpenAI API key not found. Set OPENAI_API_KEY environment variable or pass it to initializeVisionGrader()",
-    );
+export function initializeVisionGrader(provider: VisionModelProvider, apiKey?: string) {
+  if (provider === "openai") {
+    const key = apiKey || process.env.OPENAI_API_KEY;
+    if (!key) {
+      logger.error("OpenAI API key not found");
+      throw new Error(
+        "OpenAI API key not found. Set OPENAI_API_KEY environment variable or pass it to initializeVisionGrader()",
+      );
+    }
+    openaiClient = new OpenAI({ apiKey: key });
+    logger.info("OpenAI vision grader initialized successfully");
+  } else if (provider === "gemini") {
+    const key = apiKey || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+    if (!key) {
+      logger.error("Gemini API key not found");
+      throw new Error(
+        "Gemini API key not found. Set GEMINI_API_KEY or GOOGLE_API_KEY environment variable or pass it to initializeVisionGrader()",
+      );
+    }
+    geminiClient = new GoogleGenerativeAI(key);
+    logger.info("Gemini vision grader initialized successfully");
+  } else {
+    throw new Error(`Unknown provider: ${provider}`);
   }
-  openaiClient = new OpenAI({ apiKey: key });
-  logger.info("Vision grader initialized successfully");
 }
 
-function getClient(): OpenAI {
+function getOpenAIClient(): OpenAI {
   if (!openaiClient) {
-    initializeVisionGrader();
+    initializeVisionGrader("openai");
   }
   return openaiClient!;
 }
 
+function getGeminiClient(): GoogleGenerativeAI {
+  if (!geminiClient) {
+    initializeVisionGrader("gemini");
+  }
+  return geminiClient!;
+}
+
 /**
- * Convert image file to base64 data URL
+ * Convert image file to base64 data URL (for OpenAI)
  */
 async function imageToBase64DataUrl(imagePath: string): Promise<string> {
   const imageBuffer = await readFile(imagePath);
@@ -54,6 +79,25 @@ async function imageToBase64DataUrl(imagePath: string): Promise<string> {
   const mimeType = ext === "png" ? "image/png" : "image/jpeg";
 
   return `data:${mimeType};base64,${base64}`;
+}
+
+/**
+ * Convert image file to Gemini format
+ */
+async function imageToGeminiPart(imagePath: string) {
+  const imageBuffer = await readFile(imagePath);
+  const base64 = imageBuffer.toString("base64");
+
+  // Detect image type from extension
+  const ext = imagePath.toLowerCase().split(".").pop();
+  const mimeType = ext === "png" ? "image/png" : "image/jpeg";
+
+  return {
+    inlineData: {
+      data: base64,
+      mimeType,
+    },
+  };
 }
 
 /**
@@ -126,9 +170,9 @@ IMPORTANT INSTRUCTIONS:
 }
 
 /**
- * Grade quiz answers using vision model directly on the image
+ * Grade quiz answers using OpenAI vision model
  */
-export async function gradeQuizWithVision(
+async function gradeQuizWithOpenAI(
   imagePaths: string[],
   answerKey: Record<string, string>,
   options: {
@@ -137,7 +181,7 @@ export async function gradeQuizWithVision(
     maxTokens?: number;
   } = {},
 ): Promise<VisionGradingResult> {
-  const client = getClient();
+  const client = getOpenAIClient();
   const model = options.model || "gpt-4o";
   const temperature = options.temperature || 0.3;
   const maxTokens = options.maxTokens || 4096;
@@ -262,31 +306,145 @@ export async function gradeQuizWithVision(
 }
 
 /**
+ * Grade quiz answers using Gemini vision model
+ */
+async function gradeQuizWithGemini(
+  imagePaths: string[],
+  answerKey: Record<string, string>,
+  options: {
+    model?: string;
+    temperature?: number;
+  } = {},
+): Promise<VisionGradingResult> {
+  const client = getGeminiClient();
+  const modelName = options.model || "gemini-2.0-flash";
+  const temperature = options.temperature || 0.3;
+
+  logger.info(`Starting Gemini vision-based grading for ${imagePaths.length} image(s)`, {
+    model: modelName,
+    temperature,
+    questionCount: Object.keys(answerKey).length,
+  });
+
+  // Convert all images to Gemini format
+  const imageParts = await Promise.all(
+    imagePaths.map(async (path) => {
+      logger.debug(`Converting image for Gemini: ${path}`);
+      return await imageToGeminiPart(path);
+    }),
+  );
+
+  const prompt = buildVisionPrompt(answerKey);
+
+  logger.debug("Sending vision grading request to Gemini", {
+    model: modelName,
+    imageCount: imagePaths.length,
+    questionCount: Object.keys(answerKey).length,
+  });
+
+  const model = client.getGenerativeModel({
+    model: modelName,
+    generationConfig: {
+      temperature,
+      responseMimeType: "application/json",
+    },
+  });
+
+  const result = await model.generateContent([prompt, ...imageParts]);
+  const responseText = result.response.text();
+
+  logger.debug("Received response from Gemini");
+
+  let parsedResponse: any;
+
+  try {
+    parsedResponse = JSON.parse(responseText);
+    logger.debug("Successfully parsed Gemini vision response");
+  } catch (err) {
+    logger.error("Failed to parse Gemini vision response", {
+      responseText,
+      error: err,
+    });
+    throw new Error(`Failed to parse Gemini vision response: ${responseText}`);
+  }
+
+  // Extract grades from response
+  const gradesArray: VisionQuestionGrade[] = parsedResponse.grades || [];
+
+  if (gradesArray.length === 0) {
+    logger.warn("No grades returned from Gemini vision model", { response: parsedResponse });
+  }
+
+  // Calculate statistics
+  const correctCount = gradesArray.filter((g) => g.is_correct).length;
+  const incorrectCount = gradesArray.length - correctCount;
+
+  // Sort grades by question number for consistent output
+  gradesArray.sort((a, b) => {
+    const numA = Number.parseInt(a.question_number.replace(/\D/g, ""), 10);
+    const numB = Number.parseInt(b.question_number.replace(/\D/g, ""), 10);
+    return numA - numB;
+  });
+
+  logger.info(`Gemini vision grading complete: ${correctCount}/${gradesArray.length} correct`, {
+    correctCount,
+    incorrectCount,
+    totalQuestions: gradesArray.length,
+  });
+
+  // Log low confidence answers for review
+  const lowConfidenceAnswers = gradesArray.filter((g) => g.confidence < 60);
+  if (lowConfidenceAnswers.length > 0) {
+    logger.warn(`Found ${lowConfidenceAnswers.length} answers with low confidence (<60%)`, {
+      questions: lowConfidenceAnswers.map((g) => ({
+        question: g.question_number,
+        userAnswer: g.user_answer,
+        confidence: g.confidence,
+      })),
+    });
+  }
+
+  return {
+    totalQuestions: gradesArray.length,
+    correctAnswers: correctCount,
+    incorrectAnswers: incorrectCount,
+    grades: gradesArray,
+    processingNotes: parsedResponse.processing_notes,
+  };
+}
+
+/**
  * Grade quiz with retry logic
  */
 export async function gradeQuizWithVisionRetry(
   imagePaths: string[],
   answerKey: Record<string, string>,
   options: {
+    provider?: VisionModelProvider;
     model?: string;
     temperature?: number;
     maxTokens?: number;
     maxRetries?: number;
   } = {},
 ): Promise<VisionGradingResult> {
+  const provider = options.provider || "gemini"; // Default to Gemini
   const maxRetries = options.maxRetries || 3;
   let lastError: Error | null = null;
 
+  // Choose the appropriate grading function
+  const gradeFunction = provider === "gemini" ? gradeQuizWithGemini : gradeQuizWithOpenAI;
+
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      logger.debug(`Vision grading attempt ${attempt}/${maxRetries}`);
-      return await gradeQuizWithVision(imagePaths, answerKey, options);
+      logger.debug(`Vision grading attempt ${attempt}/${maxRetries} using ${provider}`);
+      return await gradeFunction(imagePaths, answerKey, options);
     } catch (err) {
       lastError = err as Error;
       logger.warn(`Vision grading attempt ${attempt} failed`, {
         error: err,
         attempt,
         maxRetries,
+        provider,
       });
       if (attempt < maxRetries) {
         const delay = Math.min(1000 * 2 ** (attempt - 1), 5000);
@@ -296,6 +454,6 @@ export async function gradeQuizWithVisionRetry(
     }
   }
 
-  logger.error("Vision grading failed after all retries", { maxRetries, lastError });
+  logger.error("Vision grading failed after all retries", { maxRetries, lastError, provider });
   throw lastError || new Error("Vision grading failed after all retries");
 }

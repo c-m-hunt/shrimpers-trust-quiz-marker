@@ -16,18 +16,27 @@ textract:
 # Grading configuration (optional)
 grading:
   enabled: true
-  strategy: "vision"  # "vision" (default) or "textract-ai"
-                      # vision: Direct image-to-AI grading (simpler, more accurate)
-                      # textract-ai: AWS Textract OCR + AI grading (legacy approach)
+  strategy: "vision"   # "vision" (default) or "textract-ai"
+                       # vision: Direct image-to-AI grading (simpler, more accurate)
+                       # textract-ai: AWS Textract OCR + AI grading (legacy approach)
+
+  provider: "gemini"   # For vision strategy: "gemini" (default, recommended) or "openai"
+                       # Gemini has excellent document understanding and is cost-effective
+                       # Requires: GEMINI_API_KEY or GOOGLE_API_KEY environment variable
+                       # OpenAI requires: OPENAI_API_KEY environment variable
+
   answerKeyPath: "./2025/answer-key.json"
   questionsPath: "./2025/questions.json"  # Optional: for textract-ai grading context
 
   # Model configuration
-  model: "gpt-4o"      # For vision: "gpt-4o" (recommended), "gpt-4o-mini"
-                       # For textract-ai: "gpt-4o-mini" (recommended), "gpt-4o"
-                       # Note: GPT-5 will be supported when available
-  temperature: 0.3     # Temperature for AI responses (0.0-1.0)
-  maxTokens: 4096      # Max tokens for vision model responses
+  model: "gemini-2.0-flash"       # Vision models:
+                                  #   Gemini: "gemini-2.0-flash" (recommended, stable & fast)
+                                  #           "gemini-2.5-flash" (newer, may have better performance)
+                                  #           "gemini-2.5-pro" (most accurate but slower)
+                                  #   OpenAI: "gpt-4o" (recommended), "gpt-4o-mini"
+                                  # Textract-AI: "gpt-4o-mini" (recommended), "gpt-4o"
+  temperature: 0.3               # Temperature for AI responses (0.0-1.0)
+  maxTokens: 4096                # Max tokens (OpenAI only)
 
 # Output configuration
 output:

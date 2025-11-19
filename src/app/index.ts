@@ -132,9 +132,11 @@ async function initializeGrading(config: Config): Promise<{
 
   try {
     if (strategy === "vision") {
-      initializeVisionGrader();
+      const provider = config.grading.provider || "gemini";
+      initializeVisionGrader(provider);
       logger.info("Vision grader initialized", {
-        model: config.grading.model || "gpt-4o",
+        provider,
+        model: config.grading.model || (provider === "gemini" ? "gemini-1.5-flash" : "gpt-4o"),
       });
     } else {
       initializeOpenAI();
@@ -197,8 +199,10 @@ async function processQuizWithVision(
   });
 
   try {
+    const provider = config.grading?.provider || "gemini";
     const visionResult = await gradeQuizWithVisionRetry(imagePaths, answerKey, {
-      model: config.grading?.model || "gpt-4o",
+      provider,
+      model: config.grading?.model || (provider === "gemini" ? "gemini-1.5-flash" : "gpt-4o"),
       temperature: config.grading?.temperature || 0.3,
       maxTokens: config.grading?.maxTokens || 4096,
     });
