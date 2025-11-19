@@ -11,6 +11,9 @@ export type OutputConfig = {
   sheetName?: string; // For Google Sheets
 };
 
+export type GradingStrategy = "vision" | "textract-ai";
+export type VisionProvider = "openai" | "gemini";
+
 export type Config = {
   input: {
     folder: string;
@@ -23,10 +26,13 @@ export type Config = {
   };
   grading?: {
     enabled: boolean;
+    strategy?: GradingStrategy; // Default: "vision"
+    provider?: VisionProvider; // For vision strategy: "openai" or "gemini" (default: "gemini")
     answerKeyPath: string;
     questionsPath?: string;
-    model?: string;
+    model?: string; // For vision: OpenAI: "gpt-4o", "gpt-4o-mini"; Gemini: "gemini-2.0-flash-exp", "gemini-1.5-pro", "gemini-1.5-flash". For textract-ai: "gpt-4o-mini", etc.
     temperature?: number;
+    maxTokens?: number; // For OpenAI vision models
   };
   output: OutputConfig[];
 };
@@ -38,6 +44,13 @@ const defaultConfig = {
   textract: {
     useMock: false,
     saveMock: false,
+  },
+  grading: {
+    strategy: "vision" as GradingStrategy,
+    provider: "gemini" as VisionProvider,
+    model: "gemini-1.5-flash", // Stable model (was gemini-2.0-flash-exp which expired)
+    temperature: 0.3,
+    maxTokens: 4096,
   },
 };
 
@@ -58,7 +71,12 @@ export async function loadConfig(configPath: string): Promise<Config> {
         ...defaultConfig.textract,
         ...config.textract,
       },
-      grading: config.grading,
+      grading: config.grading
+        ? {
+            ...defaultConfig.grading,
+            ...config.grading,
+          }
+        : undefined,
       output: config.output || [],
     };
 
@@ -66,6 +84,9 @@ export async function loadConfig(configPath: string): Promise<Config> {
       inputFolder: mergedConfig.input.folder,
       useMock: mergedConfig.textract.useMock,
       gradingEnabled: mergedConfig.grading?.enabled || false,
+      gradingStrategy: mergedConfig.grading?.strategy || "vision",
+      gradingProvider: mergedConfig.grading?.provider || "gemini",
+      gradingModel: mergedConfig.grading?.model || "gemini-2.0-flash-exp",
       outputCount: mergedConfig.output.length,
     });
 

@@ -1,13 +1,8 @@
+import { describe, expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { describe, expect, test } from "bun:test";
 import type { Block } from "@aws-sdk/client-textract";
-import {
-  extractAnswers,
-  extractKeyValues,
-  extractTableAnswers,
-  normaliseKV,
-} from "../index.js";
+import { extractAnswers, extractKeyValues, extractTableAnswers, normaliseKV } from "../index.js";
 
 // Load sample Textract response from fixtures
 async function loadFixture(filename: string): Promise<Block[]> {
@@ -64,7 +59,7 @@ describe("textract module", () => {
     test("should normalize key-value pairs by trimming", () => {
       const input = {
         " Q1 ": "  Answer 1  ",
-        "Q2": "Answer 2",
+        Q2: "Answer 2",
         " Q3 ": "Answer 3",
       };
 
